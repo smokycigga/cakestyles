@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
+import Order from "../models/Order.js";
 import {
   PRODUCT_AVAILABILITY,
   PRODUCT_ORDERABILITY,
@@ -47,9 +48,11 @@ const AUDIT_FIELDS = [
   "status", "variants", "addOns", "taxRate", "costPrice",
 ];
 
+export const escapeSearchRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // Scheduled products auto-appear once publishAt passes.
-const publicFilter = () => ({
-  $or: [{ status: "published" }, { status: "scheduled", publishAt: { $lte: new Date() } }],
+export const publicFilter = (now = new Date()) => ({
+  $or: [{ status: "published" }, { status: "scheduled", publishAt: { $lte: now } }],
 });
 
 const uniqueSlug = async (base) => {
@@ -71,18 +74,66 @@ export const listPublic = async (req, res) => {
   }
   if (req.query.featured === "1") filter.featured = true;
   if (req.query.search) {
+    const search = new RegExp(escapeSearchRegex(req.query.search), "i");
     filter.$and = [
       publicFilter(),
       { $or: [
-        { name: new RegExp(req.query.search, "i") },
-        { shortDescription: new RegExp(req.query.search, "i") },
-        { tags: new RegExp(req.query.search, "i") },
+        { name: search },
+        { shortDescription: search },
+        { tags: search },
       ] },
     ];
     delete filter.$or;
   }
 
+  if (req.query.bestsellers === "1") {
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 4, 1), 20);
+    const ranked = await Order.aggregate([
+      { $match: { status: { $nin: ["cancelled", "refunded", "partially_refunded"] } } },
+      { $unwind: "$items" },
+      { $match: { "items.product": { $ne: null } } },
+      {
+        $group: {
+          _id: "$items.product",
+          unitsSold: { $sum: "$items.quantity" },
+          salesRevenue: { $sum: "$items.lineTotal" },
+          orderLines: { $sum: 1 },
+        },
+      },
+      { $sort: { unitsSold: -1, salesRevenue: -1 } },
+      { $limit: limit * 3 },
+    ]);
+
+    if (ranked.length > 0) {
+      const rankById = new Map(ranked.map((entry, index) => [String(entry._id), { ...entry, salesRank: index + 1 }]));
+      const rankedProducts = await Product.find({ ...filter, _id: { $in: ranked.map((entry) => entry._id) } })
+        .select("-costPrice -internalNotes")
+        .populate("category", "name slug");
+      const products = rankedProducts
+        .map((product) => {
+          const sales = rankById.get(String(product._id));
+          return {
+            ...product.toObject(),
+            salesRank: sales.salesRank,
+            unitsSold: sales.unitsSold,
+            salesRevenue: sales.salesRevenue,
+          };
+        })
+        .sort((left, right) => left.salesRank - right.salesRank)
+        .slice(0, limit);
+      if (products.length > 0) return res.json({ products, source: "sales" });
+    }
+
+    const products = await Product.find({ ...filter, featured: true })
+      .select("-costPrice -internalNotes")
+      .populate("category", "name slug")
+      .sort({ name: 1 })
+      .limit(limit);
+    return res.json({ products, source: "featured" });
+  }
+
   const products = await Product.find(filter)
+    .select("-costPrice -internalNotes")
     .populate("category", "name slug")
     .sort({ featured: -1, name: 1 });
 
@@ -90,10 +141,9 @@ export const listPublic = async (req, res) => {
 };
 
 export const getPublic = async (req, res) => {
-  const product = await Product.findOne({ slug: req.params.slug, ...publicFilter() }).populate(
-    "category",
-    "name slug"
-  );
+  const product = await Product.findOne({ slug: req.params.slug, ...publicFilter() })
+    .select("-costPrice -internalNotes")
+    .populate("category", "name slug");
   if (!product) return res.status(404).json({ message: "Product not found" });
   res.json({ product });
 };

@@ -1,65 +1,28 @@
 import { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
-import { CheckCircle2, PackageSearch, Clock3, MapPin } from "lucide-react";
+import { useLocation, useParams, Link } from "react-router-dom";
+import { CheckCircle2, Clock3, MapPin, PackageSearch } from "lucide-react";
 import api from "../lib/api";
 import { inr, fmtDay } from "../lib/format";
-import { useCart } from "../store/CartContext";
 
 export default function OrderConfirmation() {
   const { orderNumber } = useParams();
-  const [order, setOrder] = useState(null);
-  const { clearCart } = useCart();
+  const location = useLocation();
+  const [order, setOrder] = useState(location.state?.order || null);
+  const phone = new URLSearchParams(location.search).get("phone") || "";
 
   useEffect(() => {
     document.title = "Order Confirmed — Cakestyles";
-    clearCart();
-    api
-      .get(`/orders/track/${orderNumber}?phone=${new URLSearchParams(window.location.search).get("phone") || ""}`)
-      .then((r) => setOrder(r.data.order))
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderNumber]);
+    if (order || !phone) return;
+    api.get(`/orders/track/${orderNumber}?phone=${encodeURIComponent(phone)}`).then((response) => setOrder(response.data.order)).catch(() => {});
+  }, [order, orderNumber, phone]);
 
   return (
-    <div className="max-w-xl mx-auto px-4 py-16 text-center">
-      <div className="w-20 h-20 mx-auto rounded-full bg-emerald-50 flex items-center justify-center mb-5">
-        <CheckCircle2 className="w-10 h-10 text-emerald-600" />
-      </div>
-      <h1 className="font-display text-3xl font-semibold text-wine-800">Thank you! Order received.</h1>
-      <p className="text-sm text-cocoa-500 mt-2">
-        Keep this number handy — you can track your order with it anytime.
-      </p>
-
-      <div className="mt-6 bg-white rounded-2xl border border-wine-100 p-6">
-        <div className="text-xs uppercase tracking-widest text-cocoa-400">Order Number</div>
-        <div className="font-display text-3xl font-semibold text-wine-700 mt-1">{orderNumber}</div>
-
-        {order && (
-          <div className="mt-5 pt-4 border-t border-wine-100 space-y-2.5 text-sm text-left">
-            <div className="flex items-center gap-2.5 text-cocoa-600">
-              <Clock3 className="w-4 h-4 text-wine-500" />
-              {fmtDay(order.fulfilment?.date)} · {order.fulfilment?.slot || "any time"}
-            </div>
-            <div className="flex items-center gap-2.5 text-cocoa-600">
-              <MapPin className="w-4 h-4 text-wine-500" />
-              {order.fulfilment?.type === "delivery" ? "Delivery to your address" : "Store pickup"}
-            </div>
-            <div className="flex items-center gap-2.5 text-cocoa-600">
-              <PackageSearch className="w-4 h-4 text-wine-500" />
-              {order.items?.length} item(s) · <span className="font-semibold text-wine-700">{inr(order.grandTotal)}</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="mt-8 flex flex-wrap justify-center gap-3">
-        <Link to="/track" className="bg-wine-700 hover:bg-wine-800 text-white font-medium px-6 py-3 rounded-full text-sm">
-          Track This Order
-        </Link>
-        <Link to="/menu" className="border border-wine-200 hover:bg-wine-50 text-wine-700 font-medium px-6 py-3 rounded-full text-sm">
-          Order Something Else
-        </Link>
-      </div>
+    <div className="mx-auto max-w-xl px-4 py-16 text-center">
+      <span className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50"><CheckCircle2 className="h-10 w-10 text-emerald-600" /></span>
+      <h1 className="mt-5 font-display text-3xl font-semibold text-wine-800">Thank you! Order received.</h1>
+      <p className="mt-2 text-sm text-cocoa-500">Keep your order number handy so you can track every update.</p>
+      <div className="mt-6 rounded-3xl border border-wine-100 bg-white p-6 shadow-sm"><p className="text-xs uppercase tracking-[0.22em] text-cocoa-400">Order number</p><p className="mt-1 font-display text-3xl font-semibold text-wine-700">{orderNumber}</p>{order && <div className="mt-5 space-y-3 border-t border-wine-100 pt-5 text-left text-sm text-cocoa-600"><p className="flex items-center gap-2.5"><Clock3 className="h-4 w-4 text-wine-500" />{fmtDay(order.fulfilment?.date)} · {order.fulfilment?.slot || "Any time"}</p><p className="flex items-center gap-2.5"><MapPin className="h-4 w-4 text-wine-500" />{order.fulfilment?.type === "delivery" ? "Delivery to your address" : "Store pickup"}</p><p className="flex items-center gap-2.5"><PackageSearch className="h-4 w-4 text-wine-500" />{order.items?.length} item(s) · <span className="font-semibold text-wine-700">{inr(order.grandTotal)}</span></p></div>}</div>
+      <div className="mt-8 flex flex-wrap justify-center gap-3"><Link to="/track" className="rounded-full bg-wine-700 px-6 py-3 text-sm font-medium text-white">Track this order</Link><Link to="/menu" className="rounded-full border border-wine-200 px-6 py-3 text-sm font-medium text-wine-700">Order something else</Link></div>
     </div>
   );
 }

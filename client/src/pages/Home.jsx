@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, ArrowDown, Star, Egg, Heart, Sparkles, Clock3, Check, Store, Bike } from "lucide-react";
+import { ArrowRight, ArrowDown, Star, Egg, Heart, Sparkles, Clock3 } from "lucide-react";
 import api from "../lib/api";
 import ProductCard from "../components/public/ProductCard";
+import FulfilmentChoice from "../components/public/FulfilmentChoice";
+import DeliverySetupModal from "../components/public/DeliverySetupModal";
 import { useSettings } from "../store/SettingsContext";
+import { useFulfilment } from "../store/FulfilmentContext";
 import {
   SmoothScroll,
   Preloader,
@@ -45,21 +48,25 @@ export default function Home() {
   const [featured, setFeatured] = useState([]);
   const settings = useSettings();
   const navigate = useNavigate();
+  const { type, setType, confirmFulfilment } = useFulfilment();
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
   const store = settings?.store || {};
 
-  const chooseFulfilment = (type) => {
-    try {
-      localStorage.setItem("cs_fulfilment_pref", type);
-    } catch {
-      /* storage unavailable */
-    }
+  const choosePickup = () => {
+    setType("pickup");
+    navigate("/menu");
+  };
+
+  const completeDelivery = (address) => {
+    confirmFulfilment({ type: "delivery", address });
+    setDeliveryOpen(false);
     navigate("/menu");
   };
 
   useEffect(() => {
     document.title = "Cakestyles — Handcrafted Cakes & Bakes";
     api
-      .get("/products?featured=1")
+      .get("/products?bestsellers=1&limit=4")
       .then((r) => setFeatured(r.data.products.slice(0, 4)))
       .catch(() => {});
   }, []);
@@ -103,7 +110,7 @@ export default function Home() {
             <Reveal delay={1.75} y={20}>
               <div className="mt-9 flex flex-wrap items-center gap-4">
                 <MagneticButton
-                  onClick={() => (window.location.href = "/menu")}
+                  onClick={() => document.getElementById("start-order")?.scrollIntoView({ behavior: "smooth" })}
                   className="group inline-flex items-center gap-2.5 bg-wine-700 hover:bg-wine-800 text-cream-50 font-medium px-8 py-4 rounded-full text-sm tracking-wide shadow-xl shadow-wine-700/20 transition-colors"
                 >
                   Order Online
@@ -173,40 +180,32 @@ export default function Home() {
       />
 
       {/* ===================== PICK-UP / DELIVERY ===================== */}
-      <section className="max-w-3xl mx-auto px-4 sm:px-6 py-20 sm:py-24 text-center">
+      <section id="start-order" className="mx-auto max-w-4xl px-4 py-20 sm:px-6 sm:py-24">
         <Reveal>
-          <p className="text-xs tracking-[0.3em] uppercase text-gold-600 font-semibold">Start your order</p>
+          <div className="mx-auto mb-7 flex aspect-square w-full max-w-sm items-center justify-center overflow-hidden rounded-[2rem] bg-blush-200 shadow-2xl shadow-wine-900/10">
+            <div className="text-center">
+              <p className="font-display text-6xl font-semibold tracking-tight text-wine-800">{store.name || "Cakestyles"}</p>
+              <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.35em] text-wine-600">Fresh bakes · made to order</p>
+            </div>
+          </div>
         </Reveal>
-        <SplitHeading
-          text="How would you like your *treats?*"
-          className="font-display text-3xl sm:text-5xl font-semibold text-wine-800 mt-3 text-balance"
-        />
-        <Reveal delay={0.15}>
-          <p className="text-sm text-cocoa-500 mt-4">100% veg · Baked fresh to order — pick a way to get them.</p>
+        <Reveal delay={0.12}>
+          <FulfilmentChoice
+            selectedType={type}
+            deliveryDisabled={settings?.delivery?.enabled === false}
+            onPickup={choosePickup}
+            onDelivery={() => setDeliveryOpen(true)}
+            title={`Welcome to ${store.name || "Cakestyles"}`}
+            description="Choose self pick-up or set your delivery address, then explore the complete menu."
+          />
         </Reveal>
-
-        <div className="grid sm:grid-cols-2 gap-4 mt-10">
-          {[
-            { id: "pickup", icon: Store, title: "Self Pick-up", sub: "Or arrange your own delivery", hint: "Choose a pickup slot at checkout" },
-            { id: "delivery", icon: Bike, title: "Get It Delivered", sub: "Delivered to your doorstep", hint: "Enter your address at checkout" },
-          ].map(({ id, icon: Icon, title, sub, hint }, i) => (
-            <Reveal key={id} delay={0.2 + i * 0.12}>
-              <button
-                onClick={() => chooseFulfilment(id)}
-                className="group relative w-full bg-white rounded-3xl border border-wine-100 hover:border-wine-400 p-7 text-left transition-all duration-300 hover:-translate-y-1.5 hover:shadow-2xl hover:shadow-wine-900/10"
-              >
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-wine-600 to-wine-800 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <Icon className="w-5 h-5 text-gold-300" />
-                </div>
-                <h2 className="font-display text-xl font-semibold text-wine-800 mt-5 uppercase tracking-wide">{title}</h2>
-                <p className="text-sm text-cocoa-500 mt-1.5">{sub}</p>
-                <p className="text-xs text-cocoa-400 mt-1">{hint}</p>
-                <ArrowRight className="w-4 h-4 text-wine-400 absolute top-7 right-7 transition-all group-hover:translate-x-1 group-hover:text-wine-700" />
-              </button>
-            </Reveal>
-          ))}
-        </div>
       </section>
+
+      <DeliverySetupModal
+        open={deliveryOpen}
+        onClose={() => setDeliveryOpen(false)}
+        onConfirm={completeDelivery}
+      />
 
       {/* ============================ PILLARS ============================ */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 py-20 sm:py-28">

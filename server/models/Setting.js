@@ -43,6 +43,24 @@ const settingSchema = new mongoose.Schema(
     invoice: {
       prefix: { type: String, default: "INV" },
     },
+    loyalty: {
+      enabled: { type: Boolean, default: true },
+      earnPerRupee: { type: Number, default: 0.01, min: 0 },
+      redemptionValue: { type: Number, default: 1, min: 0 },
+      minRedeem: { type: Number, default: 100, min: 0 },
+      tierThresholds: {
+        type: [{
+          name: { type: String, required: true, trim: true, lowercase: true },
+          minPoints: { type: Number, required: true, min: 0 },
+          _id: false,
+        }],
+        default: [
+          { name: "bronze", minPoints: 0 },
+          { name: "silver", minPoints: 500 },
+          { name: "gold", minPoints: 1500 },
+        ],
+      },
+    },
   },
   { timestamps: true }
 );

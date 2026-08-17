@@ -38,6 +38,7 @@ export default function Settings() {
         pickup: settings.pickup,
         paymentMethods: settings.paymentMethods,
         invoice: settings.invoice,
+        loyalty: settings.loyalty,
       });
       toast.success("Settings saved");
     } catch (err) {
@@ -163,6 +164,38 @@ export default function Settings() {
             <Field label="Same-day order cutoff (hours before slot)">
               <input disabled={!editable} type="number" min="0" value={getVal("pickup.cutoffHours") ?? 12} onChange={(e) => set("pickup.cutoffHours", Number(e.target.value))} className={inputCls} />
             </Field>
+          </section>
+
+          {/* Loyalty */}
+          <section className="bg-white rounded-2xl border border-wine-100 p-5 space-y-3">
+            <h3 className="text-sm font-semibold text-cocoa-900">Loyalty & Rewards</h3>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" disabled={!editable} checked={!!getVal("loyalty.enabled")} onChange={(e) => set("loyalty.enabled", e.target.checked)} className="accent-wine-600" />
+              Award points when orders are completed
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              <Field label="Points per ₹">
+                <input disabled={!editable} type="number" min="0" step="0.001" value={getVal("loyalty.earnPerRupee") ?? 0.01} onChange={(e) => set("loyalty.earnPerRupee", Number(e.target.value))} className={inputCls} />
+              </Field>
+              <Field label="₹ value per point">
+                <input disabled={!editable} type="number" min="0" step="0.01" value={getVal("loyalty.redemptionValue") ?? 1} onChange={(e) => set("loyalty.redemptionValue", Number(e.target.value))} className={inputCls} />
+              </Field>
+              <Field label="Minimum redemption">
+                <input disabled={!editable} type="number" min="0" step="1" value={getVal("loyalty.minRedeem") ?? 100} onChange={(e) => set("loyalty.minRedeem", Number(e.target.value))} className={inputCls} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {(getVal("loyalty.tierThresholds") || []).map((tier, index) => (
+                <Field key={tier.name || index} label={`${tier.name || `Tier ${index + 1}`} points`}>
+                  <input disabled={!editable} type="number" min="0" value={tier.minPoints ?? 0} onChange={(e) => {
+                    const tiers = [...(getVal("loyalty.tierThresholds") || [])];
+                    tiers[index] = { ...tiers[index], minPoints: Number(e.target.value) };
+                    set("loyalty.tierThresholds", tiers);
+                  }} className={inputCls} />
+                </Field>
+              ))}
+            </div>
+            <p className="text-[11px] text-cocoa-400">Default earn rate 0.01 means 1 point for every ₹100 spent.</p>
           </section>
 
           {/* Payments & invoicing */}

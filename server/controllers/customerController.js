@@ -4,6 +4,9 @@ import Customer from "../models/Customer.js";
 import Order from "../models/Order.js";
 import Invoice from "../models/Invoice.js";
 import Enquiry from "../models/Enquiry.js";
+import Activity from "../models/Activity.js";
+import Task from "../models/Task.js";
+import LoyaltyTransaction from "../models/LoyaltyTransaction.js";
 import { protect, requirePerm } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
 import { normalizePhone } from "../utils/misc.js";
@@ -76,10 +79,13 @@ export const getOne = [protect, requirePerm("customers:read"), async (req, res) 
   const customer = await Customer.findById(req.params.id);
   if (!customer) return res.status(404).json({ message: "Customer not found" });
 
-  const [orders, invoices, enquiries] = await Promise.all([
+  const [orders, invoices, enquiries, activities, tasks, loyaltyTransactions] = await Promise.all([
     Order.find({ customer: customer._id }).sort({ createdAt: -1 }).select("orderNumber status source grandTotal amountPaid payment.status fulfilment createdAt"),
     Invoice.find({ customer: customer._id }).sort({ createdAt: -1 }).select("invoiceNumber status total amountPaid balanceDue dueDate createdAt"),
     Enquiry.find({ customer: customer._id }).sort({ createdAt: -1 }).select("status eventDate quotedAmount convertedOrder createdAt"),
+    Activity.find({ customer: customer._id }).populate("actor", "name").sort({ occurredAt: -1 }),
+    Task.find({ customer: customer._id }).populate("assignedTo", "name").sort({ dueAt: -1 }),
+    LoyaltyTransaction.find({ customer: customer._id }).populate("order", "orderNumber").sort({ createdAt: -1 }),
   ]);
 
   // Chronological timeline of every interaction (PRD §12.3).
@@ -87,6 +93,9 @@ export const getOne = [protect, requirePerm("customers:read"), async (req, res) 
     ...orders.map((o) => ({ type: "order", at: o.createdAt, ref: o })),
     ...invoices.map((i) => ({ type: "invoice", at: i.createdAt, ref: i })),
     ...enquiries.map((e) => ({ type: "enquiry", at: e.createdAt, ref: e })),
+    ...activities.map((activity) => ({ type: "activity", at: activity.occurredAt, ref: activity })),
+    ...tasks.map((task) => ({ type: "task", at: task.createdAt, ref: task })),
+    ...loyaltyTransactions.map((transaction) => ({ type: "loyalty", at: transaction.createdAt, ref: transaction })),
     ...customer.notes.map((n) => ({ type: "note", at: n.at, ref: n })),
   ].sort((a, b) => new Date(b.at) - new Date(a.at));
 
@@ -103,6 +112,11 @@ export const getOne = [protect, requirePerm("customers:read"), async (req, res) 
       lifetimeValue,
       outstanding,
       lastOrderAt: validOrders[0]?.createdAt || null,
+      pointsBalance: customer.pointsBalance || 0,
+      totalEarned: customer.totalEarned || 0,
+      totalRedeemed: customer.totalRedeemed || 0,
+      tier: customer.tier || "bronze",
+      openTasks: tasks.filter((task) => !["completed", "cancelled"].includes(task.status)).length,
     },
     timeline,
   });
@@ -156,6 +170,8 @@ export const exportCsv = [protect, requirePerm("customers:read"), async (req, re
     { label: "totalOrders", get: (c) => metrics.get(String(c._id))?.orderCount || 0 },
     { label: "lifetimeValue", get: (c) => metrics.get(String(c._id))?.lifetimeValue || 0 },
     { label: "lastOrderDate", get: (c) => (metrics.get(String(c._id))?.lastOrderAt || "").toString().slice(0, 10) },
+    { label: "loyaltyPoints", get: (c) => c.pointsBalance || 0 },
+    { label: "loyaltyTier", get: (c) => c.tier || "bronze" },
     { label: "createdAt", get: (c) => c.createdAt.toISOString().slice(0, 10) },
   ]);
 }];

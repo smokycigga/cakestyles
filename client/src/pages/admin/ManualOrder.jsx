@@ -38,8 +38,6 @@ export default function ManualOrder() {
     return customers.filter((c) => c.name.toLowerCase().includes(q) || c.phone.includes(q)).slice(0, 8);
   }, [customers, customerSearch]);
 
-  const catalogueLines = lines.filter((l) => !l.isCustom);
-  const catalogueTotal = catalogueLines.reduce((s, l) => s + l.unitPrice * l.quantity, 0);
 
   const addProduct = (productId) => {
     const p = products.find((x) => x._id === productId);

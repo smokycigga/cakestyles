@@ -27,6 +27,10 @@ const customerSchema = new mongoose.Schema(
       },
     ],
     active: { type: Boolean, default: true },
+    pointsBalance: { type: Number, default: 0, min: 0 },
+    totalEarned: { type: Number, default: 0, min: 0 },
+    totalRedeemed: { type: Number, default: 0, min: 0 },
+    tier: { type: String, default: "bronze", trim: true, lowercase: true },
   },
   { timestamps: true }
 );

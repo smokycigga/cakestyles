@@ -21,6 +21,11 @@ import dashboardRoutes from "./routes/dashboardRoutes.js";
 import reportRoutes from "./routes/reportRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import taskRoutes from "./routes/taskRoutes.js";
+import activityRoutes from "./routes/activityRoutes.js";
+import crmRoutes from "./routes/crmRoutes.js";
+import loyaltyRoutes from "./routes/loyaltyRoutes.js";
+import campaignRoutes from "./routes/campaignRoutes.js";
 
 const app = express();
 
@@ -59,6 +64,11 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/tasks", taskRoutes);
+app.use("/api/activities", activityRoutes);
+app.use("/api/crm", crmRoutes);
+app.use("/api/loyalty", loyaltyRoutes);
+app.use("/api/campaigns", campaignRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });

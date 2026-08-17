@@ -22,6 +22,9 @@ import ProductForm from "./pages/admin/ProductForm";
 import MenuManager from "./pages/admin/MenuManager";
 import Customers from "./pages/admin/Customers";
 import CustomerDetail from "./pages/admin/CustomerDetail";
+import CRM from "./pages/admin/CRM";
+import Tasks from "./pages/admin/Tasks";
+import Campaigns from "./pages/admin/Campaigns";
 import Enquiries from "./pages/admin/Enquiries";
 import Invoices from "./pages/admin/Invoices";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
@@ -85,6 +88,9 @@ export default function App() {
         <Route path="menu" element={<MenuManager />} />
         <Route path="customers" element={<Customers />} />
         <Route path="customers/:id" element={<CustomerDetail />} />
+        <Route path="crm" element={<CRM />} />
+        <Route path="tasks" element={<Tasks />} />
+        <Route path="campaigns" element={<Campaigns />} />
         <Route path="enquiries" element={<Enquiries />} />
         <Route path="invoices" element={<Invoices />} />
         <Route path="invoices/:id" element={<InvoiceDetail />} />

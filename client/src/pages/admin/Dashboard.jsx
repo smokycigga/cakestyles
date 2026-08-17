@@ -41,8 +41,11 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    api
+      .get("/dashboard", { params: { range: "30d" } })
+      .then((res) => setData(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   const k = data?.kpis;

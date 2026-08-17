@@ -22,7 +22,6 @@ const AVAIL_META = {
 export default function Products() {
   const { can } = useAuth();
   const [products, setProducts] = useState(null);
-  const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -34,7 +33,6 @@ export default function Products() {
 
   const load = () => api.get("/products/admin", { params: search ? { search } : {} }).then((r) => setProducts(r.data.products));
   useEffect(() => {
-    api.get("/categories?all=1").then((r) => setCategories(r.data.categories)).catch(() => {});
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

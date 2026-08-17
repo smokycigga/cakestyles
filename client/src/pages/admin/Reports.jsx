@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Download } from "lucide-react";
-import { inr } from "../../lib/format";
-import { PageHeader, Button, Field, inputCls } from "../../components/admin/ui";
+import { PageHeader } from "../../components/admin/ui";
 import { useAuth } from "../../store/AuthContext";
 
 const REPORTS = [

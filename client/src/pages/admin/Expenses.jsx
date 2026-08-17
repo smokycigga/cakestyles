@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus, Download, Trash2, Search } from "lucide-react";
+import { Plus, Download, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { errMsg } from "../../lib/api";
 import { compressImage } from "../../lib/imageCompress";

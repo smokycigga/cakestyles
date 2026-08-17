@@ -1,61 +1,66 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
-// Cart is variant/add-on aware and persisted to localStorage so a WhatsApp
-// visitor who refreshes doesn't lose their basket.
 const CartContext = createContext(null);
 
-const key = (item) =>
-  `${item.productId}|${item.variantName || ""}|${(item.addOns || []).map((a) => a.name).sort().join(",")}`;
+const key = (item) => {
+  const addOnNames = (item.addOns || []).map((addOn) => addOn.name).sort();
+  return `${item.productId}|${item.variantName || ""}|${addOnNames.join(",")}|${item.notes || ""}`;
+};
 
 export const CartProvider = ({ children }) => {
   const [cart, setCart] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem("cs_cart") || "[]");
+      const stored = JSON.parse(localStorage.getItem("cs_cart") || "[]");
+      return Array.isArray(stored) ? stored : [];
     } catch {
       return [];
     }
   });
 
   useEffect(() => {
-    localStorage.setItem("cs_cart", JSON.stringify(cart));
+    try {
+      localStorage.setItem("cs_cart", JSON.stringify(cart));
+    } catch {
+      // The cart still works in memory when storage is unavailable.
+    }
   }, [cart]);
 
   const addToCart = (item) => {
-    setCart((prev) => {
-      const k = key(item);
-      const existing = prev.find((i) => key(i) === k);
+    setCart((current) => {
+      const itemKey = key(item);
+      const existing = current.find((entry) => key(entry) === itemKey);
       if (existing) {
-        return prev.map((i) => (key(i) === k ? { ...i, quantity: i.quantity + item.quantity } : i));
+        return current.map((entry) =>
+          key(entry) === itemKey
+            ? { ...entry, quantity: Math.min(99, entry.quantity + item.quantity) }
+            : entry,
+        );
       }
-      return [...prev, item];
+      return [...current, { ...item, quantity: Math.min(99, Math.max(1, item.quantity)) }];
     });
   };
 
-  const setQuantity = (k, quantity) => {
-    setCart((prev) =>
-      quantity <= 0 ? prev.filter((i) => key(i) !== k) : prev.map((i) => (key(i) === k ? { ...i, quantity } : i))
+  const setQuantity = (itemKey, quantity) => {
+    setCart((current) =>
+      quantity <= 0
+        ? current.filter((entry) => key(entry) !== itemKey)
+        : current.map((entry) =>
+            key(entry) === itemKey ? { ...entry, quantity: Math.min(99, quantity) } : entry,
+          ),
     );
   };
 
-  const removeItem = (k) => setCart((prev) => prev.filter((i) => key(i) !== k));
+  const removeItem = (itemKey) => setCart((current) => current.filter((entry) => key(entry) !== itemKey));
   const clearCart = () => setCart([]);
 
   const value = useMemo(() => {
-    const totalItems = cart.reduce((s, i) => s + i.quantity, 0);
+    const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
     const totalPrice = cart.reduce(
-      (s, i) => s + (i.unitPrice + (i.addOns || []).reduce((a, x) => a + x.price, 0)) * i.quantity,
-      0
+      (sum, item) => sum + (item.unitPrice + (item.addOns || []).reduce((addOnSum, addOn) => addOnSum + addOn.price, 0)) * item.quantity,
+      0,
     );
-    return {
-      cart,
-      addToCart,
-      setQuantity,
-      removeItem,
-      clearCart,
-      totalItems,
-      totalPrice,
-      itemKey: key,
-    };
+    return { cart, addToCart, setQuantity, removeItem, clearCart, totalItems, totalPrice, itemKey: key };
   }, [cart]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;

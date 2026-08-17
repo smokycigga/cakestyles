@@ -26,6 +26,11 @@ export const listUsers = [protect, requirePerm("users:manage"), async (req, res)
   res.json({ users: users.map((u) => u.toSafeJSON()) });
 }];
 
+export const listAssignableUsers = [protect, requirePerm("customers:read"), async (req, res) => {
+  const users = await User.find({ active: true }).select("name email role active").sort({ name: 1 }).lean();
+  res.json({ users });
+}];
+
 export const createUser = [protect, requirePerm("users:manage"), validate(createSchema), async (req, res) => {
   const { name, email, password, role } = req.body;
 

@@ -65,12 +65,19 @@ const seed = async () => {
   ]);
 
   // --- Products (real Cakestyles catalogue; images to be added by owner) ----
+  const defaultAddOns = [
+    { name: "Happy Birthday topper", price: 10 },
+    { name: "Happy Anniversary topper", price: 10 },
+    { name: "Candles", price: 10 },
+    { name: "Vanilla ice cream", price: 80 },
+  ];
   const p = (data) => ({
     slug: slugify(data.name),
     status: "published",
     availability: "active",
     orderability: "online",
     prepTimeHours: data.prepTimeHours ?? 0,
+    addOns: defaultAddOns,
     ...data,
   });
   // helper to pick category by name

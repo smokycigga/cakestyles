@@ -64,6 +64,8 @@ const orderSchema = new mongoose.Schema(
     grandTotal: { type: Number, required: true },
     amountPaid: { type: Number, default: 0 },
     specialInstructions: { type: String, default: "" },
+    // Stores a SHA-256 digest; the raw guest checkout token is returned only once.
+    checkoutToken: { type: String, default: "", select: false },
     payment: {
       status: { type: String, enum: PAYMENT_STATUS, default: "pending" },
       method: { type: String, enum: PAYMENT_METHODS, default: null },
@@ -83,6 +85,8 @@ const orderSchema = new mongoose.Schema(
     enquiry: { type: mongoose.Schema.Types.ObjectId, ref: "Enquiry" },
     invoice: { type: mongoose.Schema.Types.ObjectId, ref: "Invoice" },
     createdBy: actorSchema,
+    loyaltyAwarded: { type: Boolean, default: false },
+    loyaltyPoints: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true }
 );

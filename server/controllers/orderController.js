@@ -1,9 +1,12 @@
+import crypto from "crypto";
+import mongoose from "mongoose";
 import { z } from "zod";
 
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Customer from "../models/Customer.js";
 import Setting from "../models/Setting.js";
+import LoyaltyTransaction from "../models/LoyaltyTransaction.js";
 import {
   ORDER_SOURCES,
   ORDER_STATUSES,
@@ -17,9 +20,19 @@ import { computeTotals, lineTotal, sumPayments, round2, paymentStatusFor } from 
 import { normalizePhone } from "../utils/misc.js";
 import { istDateString, startOfIstDay, istToUtc } from "../utils/dates.js";
 import { notifyOrderPlaced, notifyOrderStatus } from "../utils/notify.js";
+import {
+  calculateEarnPoints,
+  calculateTier,
+  normalizeLoyaltySettings,
+} from "../utils/loyalty.js";
+
+export const isMongoObjectId = (value) =>
+  typeof value === "string" && /^[a-f\d]{24}$/i.test(value) && mongoose.isValidObjectId(value);
+
+const objectIdSchema = z.string().refine(isMongoObjectId, "Must be a valid Mongo ObjectId");
 
 const catalogItemSchema = z.object({
-  productId: z.string().min(1),
+  productId: objectIdSchema,
   variantName: z.string().optional(),
   quantity: z.number().int().min(1).max(99),
   addOns: z.array(z.string()).optional(),
@@ -41,6 +54,17 @@ const addressSchema = z.object({
   notes: z.string().optional(),
 });
 
+const fulfilmentSchema = z.object({
+  type: z.enum(["pickup", "delivery"]),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  slot: z.string().optional(),
+  address: addressSchema.optional(),
+}).superRefine((fulfilment, ctx) => {
+  if (fulfilment.type === "delivery" && !fulfilment.address) {
+    ctx.addIssue({ code: "custom", path: ["address"], message: "Delivery address is required" });
+  }
+});
+
 const checkoutSchema = z.object({
   items: z.array(catalogItemSchema).min(1),
   customer: z.object({
@@ -48,69 +72,82 @@ const checkoutSchema = z.object({
     phone: z.string().min(8),
     email: z.string().email().optional().or(z.literal("")),
   }),
-  fulfilment: z.object({
-    type: z.enum(["pickup", "delivery"]),
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    slot: z.string().optional(),
-    address: addressSchema.optional(),
-  }),
+  fulfilment: fulfilmentSchema,
   specialInstructions: z.string().max(1000).optional(),
-  paymentMethod: z.enum(["razorpay", ...PAYMENT_METHODS.filter((m) => m !== "razorpay")]),
+  paymentMethod: z.enum(PAYMENT_METHODS),
 });
 
 // ---- Shared helpers -------------------------------------------------------
 
 // Prices ALWAYS come from the database, never the client (PRD §24).
-const priceCatalogItems = async (rawItems) => {
-  const ids = [...new Set(rawItems.map((i) => i.productId))];
-  const products = await Product.find({ _id: { $in: ids } });
-  const byId = new Map(products.map((p) => [String(p._id), p]));
+export const isProductPublic = (product, now = new Date()) =>
+  product.status === "published" ||
+  Boolean(product.status === "scheduled" && product.publishAt && new Date(product.publishAt) <= now);
 
-  return rawItems.map((item) => {
-    const product = byId.get(item.productId);
-    if (!product) throw Object.assign(new Error(`Product ${item.productId} no longer exists`), { status: 400 });
-    if (product.status !== "published") {
-      throw Object.assign(new Error(`${product.name} is not currently available`), { status: 400 });
-    }
-    if (product.availability !== "active") {
-      throw Object.assign(new Error(`${product.name} is currently ${product.availability.replace("_", " ")}`), { status: 400 });
-    }
-    if (product.orderability !== "online") {
-      throw Object.assign(new Error(`${product.name} is browse-only and cannot be ordered online`), { status: 400 });
-    }
+export const hashCheckoutToken = (token) =>
+  crypto.createHash("sha256").update(token).digest("hex");
 
-    const variant = item.variantName
-      ? product.variants.find((v) => v.name === item.variantName)
-      : null;
-    if (item.variantName && !variant) {
-      throw Object.assign(new Error(`Variant "${item.variantName}" not available for ${product.name}`), { status: 400 });
-    }
+export const priceCatalogItem = (item, product) => {
+  if (!product) throw Object.assign(new Error(`Product ${item.productId} no longer exists`), { status: 400 });
+  if (!isProductPublic(product)) {
+    throw Object.assign(new Error(`${product.name} is not currently available`), { status: 400 });
+  }
+  if (product.availability !== "active") {
+    throw Object.assign(new Error(`${product.name} is currently ${product.availability.replace("_", " ")}`), { status: 400 });
+  }
+  if (product.orderability !== "online") {
+    throw Object.assign(new Error(`${product.name} is browse-only and cannot be ordered online`), { status: 400 });
+  }
 
-    const addOns = (item.addOns || [])
-      .map((name) => product.addOns.find((a) => a.name === name))
-      .filter(Boolean)
-      .map((a) => ({ name: a.name, price: a.price }));
+  const variants = product.variants || [];
+  if (variants.length > 0 && !item.variantName) {
+    throw Object.assign(new Error(`Please choose a variant for ${product.name}`), { status: 400 });
+  }
+  const variant = item.variantName
+    ? variants.find((candidate) => candidate.name === item.variantName)
+    : null;
+  if (item.variantName && !variant) {
+    throw Object.assign(new Error(`Variant "${item.variantName}" not available for ${product.name}`), { status: 400 });
+  }
 
-    return {
-      product: product._id,
-      name: product.name,
-      variantName: variant?.name || "",
-      unitPrice: variant ? variant.price : product.basePrice,
-      quantity: item.quantity,
-      addOns,
-      lineTotal: lineTotal({
-        unitPrice: variant ? variant.price : product.basePrice,
-        quantity: item.quantity,
-        addOns,
-      }),
-      isCustom: false,
-      notes: item.notes || "",
-    };
+  const requestedAddOns = item.addOns || [];
+  if (new Set(requestedAddOns).size !== requestedAddOns.length) {
+    throw Object.assign(new Error(`Duplicate add-ons are not allowed for ${product.name}`), { status: 400 });
+  }
+  const availableAddOns = product.addOns || [];
+  const unknownAddOn = requestedAddOns.find((name) => !availableAddOns.some((addOn) => addOn.name === name));
+  if (unknownAddOn) {
+    throw Object.assign(new Error(`Add-on "${unknownAddOn}" not available for ${product.name}`), { status: 400 });
+  }
+  const addOns = requestedAddOns.map((name) => {
+    const addOn = availableAddOns.find((candidate) => candidate.name === name);
+    return { name: addOn.name, price: addOn.price };
   });
+  const unitPrice = variant ? variant.price : product.basePrice;
+
+  return {
+    product: product._id,
+    name: product.name,
+    variantName: variant?.name || "",
+    unitPrice,
+    quantity: item.quantity,
+    addOns,
+    lineTotal: lineTotal({ unitPrice, quantity: item.quantity, addOns }),
+    isCustom: false,
+    notes: item.notes || "",
+  };
 };
 
-const validateFulfilment = (fulfilment, settings, items) => {
-  const today = istDateString();
+const priceCatalogItems = async (rawItems) => {
+  const ids = [...new Set(rawItems.map((item) => item.productId))];
+  const products = await Product.find({ _id: { $in: ids } });
+  const byId = new Map(products.map((product) => [String(product._id).toLowerCase(), product]));
+
+  return rawItems.map((item) => priceCatalogItem(item, byId.get(item.productId.toLowerCase())));
+};
+
+export const validateFulfilment = (fulfilment, settings, items, now = new Date()) => {
+  const today = istDateString(now);
   if (fulfilment.date < today) {
     throw Object.assign(new Error("Fulfilment date cannot be in the past"), { status: 400 });
   }
@@ -118,30 +155,57 @@ const validateFulfilment = (fulfilment, settings, items) => {
   // Minimum notice from the strictest product prep time.
   const needed = items.reduce((max, it) => Math.max(max, it.prepTimeHours || 0), 0);
 
+  let minimumNoticeHours = needed;
   if (fulfilment.type === "delivery") {
-    if (!settings.delivery.enabled) {
+    if (!fulfilment.address) {
+      throw Object.assign(new Error("Delivery address is required"), { status: 400 });
+    }
+    if (!settings.delivery?.enabled) {
       throw Object.assign(new Error("Delivery is currently not available"), { status: 400 });
     }
-    if (settings.delivery.pincodes.length > 0) {
-      const pin = fulfilment.address?.pincode?.trim();
-      if (!pin || !settings.delivery.pincodes.includes(pin)) {
+    const pincodes = settings.delivery.pincodes || [];
+    if (pincodes.length > 0) {
+      const pin = fulfilment.address.pincode.trim();
+      if (!pincodes.includes(pin)) {
         throw Object.assign(new Error(`We don't deliver to this pincode yet. Please choose pickup.`), { status: 400 });
       }
     }
-  } else if (settings.pickup.slots.length > 0 && fulfilment.slot && !settings.pickup.slots.includes(fulfilment.slot)) {
-    throw Object.assign(new Error("Invalid pickup slot"), { status: 400 });
+  } else {
+    const slots = settings.pickup?.slots || [];
+    if (slots.length === 0) {
+      throw Object.assign(new Error("Pickup is currently not available"), { status: 400 });
+    }
+    if (!fulfilment.slot || !slots.includes(fulfilment.slot)) {
+      throw Object.assign(new Error("Please choose a valid pickup slot"), { status: 400 });
+    }
+    minimumNoticeHours = Math.max(needed, Number(settings.pickup.cutoffHours) || 0);
   }
 
-  const earliest = new Date(Date.now() + needed * 3600 * 1000);
-  const slotStart = istToUtc(fulfilment.date, (fulfilment.slot || "23:59").split(" - ")[0]);
-  const cutoffDate = new Date(startOfIstDay(fulfilment.date).getTime() - settings.pickup.cutoffHours * 3600 * 1000);
-  const effectiveEarliest = new Date(Math.max(earliest.getTime(), cutoffDate.getTime()));
+  const slotTime = (fulfilment.slot || "23:59").split(" - ")[0];
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(slotTime)) {
+    throw Object.assign(new Error("Invalid fulfilment slot configuration"), { status: 500 });
+  }
+  const slotStart = istToUtc(fulfilment.date, slotTime);
+  const earliestAllowed = new Date(now.getTime() + minimumNoticeHours * 3600 * 1000);
 
-  if (slotStart < effectiveEarliest) {
+  if (slotStart < earliestAllowed) {
     throw Object.assign(
-      new Error(`This date/slot needs more preparation time. Please pick a later slot (min ${needed}h notice).`),
+      new Error(`This date/slot needs more preparation time. Please pick a later slot (min ${minimumNoticeHours}h notice).`),
       { status: 400 }
     );
+  }
+};
+
+export const validateCheckoutPaymentMethod = (method, settings) => {
+  if (method === "razorpay") {
+    if (!settings.paymentMethods?.online?.enabled) {
+      throw Object.assign(new Error("Online payment is currently unavailable. Please choose another method."), { status: 400 });
+    }
+    return;
+  }
+
+  if (!(settings.paymentMethods?.offline || []).includes(method)) {
+    throw Object.assign(new Error("This payment method is not available. Please choose another method."), { status: 400 });
   }
 };
 
@@ -168,6 +232,72 @@ const applyDeliveryFee = (settings, subtotal) => {
   return settings.delivery.fee;
 };
 
+export const awardLoyaltyForCompletedOrder = async (orderId, actor = {}) => {
+  const settings = await Setting.getSettings();
+  const loyalty = normalizeLoyaltySettings(settings.loyalty?.toObject?.() || settings.loyalty);
+  const candidate = await Order.findById(orderId)
+    .select("status customer grandTotal loyaltyAwarded loyaltyPoints orderNumber");
+
+  if (!candidate || candidate.status !== "completed" || candidate.loyaltyAwarded) return null;
+
+  const candidatePoints = calculateEarnPoints(candidate.grandTotal, loyalty.earnPerRupee);
+  if (!loyalty.enabled || !candidate.customer || candidatePoints <= 0) {
+    const claimed = await Order.findOneAndUpdate(
+      { _id: candidate._id, status: "completed", loyaltyAwarded: false },
+      { $set: { loyaltyAwarded: true, loyaltyPoints: 0 } },
+      { new: true }
+    );
+    return claimed ? { awarded: true, points: 0, transaction: null } : null;
+  }
+
+  const session = await mongoose.startSession();
+  let result = null;
+  try {
+    await session.withTransaction(async () => {
+      const order = await Order.findOne({
+        _id: candidate._id,
+        status: "completed",
+        loyaltyAwarded: false,
+      }).session(session);
+      if (!order) return;
+
+      const points = calculateEarnPoints(order.grandTotal, loyalty.earnPerRupee);
+      const customer = await Customer.findById(order.customer).session(session);
+      if (!customer || points <= 0) {
+        order.loyaltyAwarded = true;
+        order.loyaltyPoints = 0;
+        await order.save({ session });
+        result = { awarded: true, points: 0, transaction: null };
+        return;
+      }
+
+      customer.pointsBalance += points;
+      customer.totalEarned += points;
+      customer.tier = calculateTier(customer.totalEarned, loyalty.tierThresholds);
+      await customer.save({ session });
+
+      const [transaction] = await LoyaltyTransaction.create([{
+        customer: customer._id,
+        type: "earn",
+        points,
+        balanceAfter: customer.pointsBalance,
+        order: order._id,
+        note: `Points earned for order ${order.orderNumber}`,
+        actor,
+      }], { session });
+
+      order.loyaltyAwarded = true;
+      order.loyaltyPoints = points;
+      await order.save({ session });
+      result = { awarded: true, points, transaction };
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  return result;
+};
+
 // ---- Public endpoints -----------------------------------------------------
 
 export const checkout = [validate(checkoutSchema), async (req, res) => {
@@ -179,9 +309,9 @@ export const checkout = [validate(checkoutSchema), async (req, res) => {
   // Prep-time check needs raw product prep hours.
   const productIds = items.map((i) => i.product);
   const products = await Product.find({ _id: { $in: productIds } }).select("prepTimeHours");
-  const prepById = new Map(products.map((p) => [String(p._id), p.prepTimeHours]));
+  const prepById = new Map(products.map((p) => [String(p._id).toLowerCase(), p.prepTimeHours]));
   const itemsWithPrep = body.items.map((i) => ({
-    prepTimeHours: prepById.get(String(i.productId)) || 0,
+    prepTimeHours: prepById.get(String(i.productId).toLowerCase()) || 0,
   }));
   validateFulfilment(body.fulfilment, settings, itemsWithPrep);
 
@@ -194,11 +324,8 @@ export const checkout = [validate(checkoutSchema), async (req, res) => {
     taxInclusive: settings.tax.inclusive,
   });
 
-  const onlineEnabled = settings.paymentMethods.online.enabled;
   const isOnline = body.paymentMethod === "razorpay";
-  if (isOnline && !onlineEnabled) {
-    throw Object.assign(new Error("Online payment is currently unavailable. Please choose another method."), { status: 400 });
-  }
+  validateCheckoutPaymentMethod(body.paymentMethod, settings);
 
   const customer = await findOrCreateCustomer({
     ...body.customer,
@@ -206,8 +333,10 @@ export const checkout = [validate(checkoutSchema), async (req, res) => {
     leadSource: "website",
   });
 
+  const checkoutToken = crypto.randomBytes(32).toString("hex");
   const order = await Order.create({
     orderNumber: await nextOrderNumber(),
+    checkoutToken: hashCheckoutToken(checkoutToken),
     customer: customer._id,
     customerSnapshot: {
       name: body.customer.name,
@@ -226,7 +355,7 @@ export const checkout = [validate(checkoutSchema), async (req, res) => {
     amountPaid: 0,
     specialInstructions: body.specialInstructions || "",
     payment: {
-      status: isOnline ? "pending" : "pending",
+      status: "pending",
       method: body.paymentMethod,
     },
     status: isOnline ? "pending_payment" : "confirmed",
@@ -246,7 +375,9 @@ export const checkout = [validate(checkoutSchema), async (req, res) => {
   }
 
   await notifyOrderPlaced(order);
-  res.status(201).json({ order });
+  const publicOrder = order.toObject();
+  delete publicOrder.checkoutToken;
+  res.status(201).json({ order: publicOrder, checkoutToken });
 }];
 
 export const track = async (req, res) => {
@@ -318,6 +449,17 @@ export const updateStatus = [protect, requirePerm("orders:write"), validate(stat
   });
   await order.save();
 
+  if (req.body.status === "completed") {
+    const award = await awardLoyaltyForCompletedOrder(order._id, {
+      userId: req.user._id,
+      name: req.user.name,
+    });
+    if (award?.awarded) {
+      order.loyaltyAwarded = true;
+      order.loyaltyPoints = award.points;
+    }
+  }
+
   await writeAudit({
     req, action: "order.status", entity: "Order", entityId: order._id,
     before, after: { status: order.status }, fields: ["status"], meta: order.orderNumber,
@@ -373,7 +515,7 @@ export const recordPayment = [protect, requirePerm("finance:write"), validate(pa
 }];
 
 const manualOrderSchema = z.object({
-  customerId: z.string().optional(),
+  customerId: objectIdSchema.optional(),
   newCustomer: z.object({ name: z.string().min(1), phone: z.string().min(8), email: z.string().optional() }).optional(),
   source: z.enum(ORDER_SOURCES.filter((s) => s !== "website")),
   items: z.array(z.union([catalogItemSchema, customItemSchema])).min(1),

@@ -1,327 +1,111 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Loader2, ShoppingBag } from "lucide-react";
+import { ArrowLeft, Loader2, MapPin, ShoppingBag, Store, Truck } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { errMsg } from "../lib/api";
 import { useCart } from "../store/CartContext";
 import { useSettings } from "../store/SettingsContext";
-import { inr, daysFromNow } from "../lib/format";
+import { useFulfilment } from "../store/FulfilmentContext";
+import { inr } from "../lib/format";
 
-const METHOD_LABELS = {
-  razorpay: "Pay Online (Razorpay)",
-  upi: "UPI on pickup / delivery",
-  cash: "Cash on pickup / delivery",
-  bank_transfer: "Bank Transfer",
-};
+const METHOD_LABELS = { razorpay: "Pay online with Razorpay", upi: "UPI on pickup / delivery", cash: "Cash on pickup / delivery", bank_transfer: "Bank transfer", card: "Card" };
+const inputClass = "mt-1.5 w-full rounded-xl border border-wine-100 bg-white px-4 py-3 text-sm outline-none transition focus:border-wine-400 focus:ring-2 focus:ring-wine-100";
+const prettyDate = (value) => new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
 export default function Checkout() {
   const navigate = useNavigate();
   const { cart, totalPrice, clearCart } = useCart();
   const settings = useSettings();
-
-  const [fulfilmentType, setFulfilmentType] = useState(() => {
-    try {
-      return localStorage.getItem("cs_fulfilment_pref") === "delivery" ? "delivery" : "pickup";
-    } catch {
-      return "pickup";
-    }
-  });
-  const [date, setDate] = useState(daysFromNow(1));
-  const [slot, setSlot] = useState("");
-  const [form, setForm] = useState({ name: "", phone: "", email: "", line1: "", line2: "", city: "", pincode: "" });
-  const [specialInstructions, setSpecialInstructions] = useState("");
+  const { type, date, slot, address, confirmed, updateAddress } = useFulfilment();
+  const [form, setForm] = useState({ name: "", phone: "", email: "" });
+  const [instructions, setInstructions] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("upi");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    document.title = "Checkout — Cakestyles";
-  }, []);
-
-  useEffect(() => {
-    if (!settings) return;
-    if (fulfilmentType === "delivery" && !settings.delivery?.enabled) {
-      setFulfilmentType("pickup");
-      return;
-    }
-    if (fulfilmentType === "pickup") {
-      setSlot(settings.pickup?.slots?.[0] || "");
-    } else {
-      setSlot("");
-    }
-  }, [settings, fulfilmentType]);
-
-  const deliveryEnabled = settings?.delivery?.enabled;
-  const deliveryFee = useMemo(() => {
-    if (fulfilmentType !== "delivery" || !deliveryEnabled) return 0;
-    const d = settings.delivery;
-    if (d.freeOver > 0 && totalPrice >= d.freeOver) return 0;
-    return d.fee || 0;
-  }, [fulfilmentType, deliveryEnabled, settings, totalPrice]);
-
   const methods = useMemo(() => {
-    const list = [];
-    if (settings?.paymentMethods?.online?.enabled) list.push("razorpay");
-    for (const m of settings?.paymentMethods?.offline || []) list.push(m);
-    return list.length ? list : ["upi", "cash"];
+    const available = [];
+    if (settings?.paymentMethods?.online?.enabled) available.push("razorpay");
+    available.push(...(settings?.paymentMethods?.offline || ["upi", "cash"]));
+    return [...new Set(available)];
   }, [settings]);
+  const selectedPayment = methods.includes(paymentMethod) ? paymentMethod : methods[0] || "upi";
+  const deliveryFee = type === "delivery" && settings?.delivery?.enabled && !(settings.delivery.freeOver > 0 && totalPrice >= settings.delivery.freeOver) ? settings.delivery.fee || 0 : 0;
+  const tax = settings?.tax?.enabled && !settings.tax.inclusive ? (totalPrice * settings.tax.rate) / 100 : 0;
+  const total = totalPrice + deliveryFee + tax;
 
-  useEffect(() => {
-    if (!methods.includes(paymentMethod)) setPaymentMethod(methods[0]);
-  }, [methods, paymentMethod]);
+  if (cart.length === 0) return <div className="mx-auto max-w-xl px-4 py-24 text-center"><ShoppingBag className="mx-auto h-10 w-10 text-wine-500" /><h1 className="mt-4 font-display text-3xl font-semibold text-wine-800">Nothing to check out</h1><Link to="/menu" className="mt-6 inline-block rounded-full bg-wine-700 px-6 py-3 text-sm font-semibold text-white">Browse menu</Link></div>;
 
-  if (cart.length === 0) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-24 text-center">
-        <div className="w-16 h-16 mx-auto rounded-full bg-wine-50 flex items-center justify-center mb-4">
-          <ShoppingBag className="w-7 h-7 text-wine-500" />
-        </div>
-        <h1 className="font-display text-2xl font-semibold text-wine-800">Nothing to check out</h1>
-        <Link to="/menu" className="mt-6 inline-block bg-wine-700 hover:bg-wine-800 text-white font-medium px-6 py-3 rounded-full">
-          Browse Menu
-        </Link>
-      </div>
-    );
-  }
-
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
-
+  const setField = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }));
   const submit = async () => {
-    if (!form.name.trim() || form.phone.replace(/\D/g, "").length < 8) {
-      return toast.error("Please enter your name and a valid phone number");
-    }
-    if (fulfilmentType === "delivery" && (!form.line1.trim() || !form.city.trim() || !form.pincode.trim())) {
-      return toast.error("Please enter the full delivery address");
-    }
+    const phone = form.phone.replace(/\D/g, "");
+    if (!confirmed || !date || !slot) return toast.error("Please confirm your order slot from the cart");
+    if (!form.name.trim() || phone.length < 8) return toast.error("Enter your name and a valid mobile number");
+    if (form.email && !/^\S+@\S+\.\S+$/.test(form.email)) return toast.error("Enter a valid email address");
+    if (type === "delivery" && (!address.line1.trim() || !address.city.trim() || !address.pincode.trim())) return toast.error("Enter the full delivery address");
 
     setSubmitting(true);
     try {
       const body = {
-        items: cart.map((i) => ({
-          productId: i.productId,
-          variantName: i.variantName || undefined,
-          quantity: i.quantity,
-          addOns: (i.addOns || []).map((a) => a.name),
-          notes: i.notes || undefined,
-        })),
+        items: cart.map((item) => ({ productId: item.productId, variantName: item.variantName || undefined, quantity: item.quantity, addOns: (item.addOns || []).map((addOn) => addOn.name), notes: item.notes || undefined })),
         customer: { name: form.name.trim(), phone: form.phone.trim(), email: form.email.trim() },
-        fulfilment: {
-          type: fulfilmentType,
-          date,
-          slot: slot || undefined,
-          ...(fulfilmentType === "delivery"
-            ? { address: { line1: form.line1, line2: form.line2, city: form.city, pincode: form.pincode } }
-            : {}),
-        },
-        specialInstructions: specialInstructions || undefined,
-        paymentMethod,
+        fulfilment: { type, date, slot, ...(type === "delivery" ? { address } : {}) },
+        specialInstructions: instructions || undefined,
+        paymentMethod: selectedPayment,
       };
-
       const { data } = await api.post("/orders", body);
       const order = data.order;
 
-      if (paymentMethod === "razorpay") {
-        const pay = await api.post("/payment/create-order", { orderId: order._id });
+      if (selectedPayment === "razorpay") {
+        if (!window.Razorpay) throw new Error("Razorpay checkout could not be loaded");
+        const payment = await api.post("/payment/create-order", { orderId: order._id, checkoutToken: data.checkoutToken });
         await new Promise((resolve, reject) => {
-          const rzp = new window.Razorpay({
-            key: pay.data.keyId,
-            amount: pay.data.amount,
+          const razorpay = new window.Razorpay({
+            key: payment.data.keyId,
+            amount: payment.data.amount,
             currency: "INR",
             name: settings?.store?.name || "Cakestyles",
             description: `Order ${order.orderNumber}`,
-            order_id: pay.data.rpOrderId,
+            order_id: payment.data.rpOrderId,
             prefill: { name: form.name, contact: form.phone, email: form.email },
             theme: { color: "#6d2141" },
-            handler: async (resp) => {
-              try {
-                await api.post("/payment/verify", { orderId: order._id, ...resp });
-                resolve();
-              } catch (err) {
-                reject(err);
-              }
+            handler: async (response) => {
+              try { await api.post("/payment/verify", { orderId: order._id, checkoutToken: data.checkoutToken, ...response }); resolve(); }
+              catch (error) { reject(error); }
             },
             modal: { ondismiss: () => reject(new Error("Payment cancelled")) },
           });
-          rzp.open();
+          razorpay.open();
         });
       }
 
       clearCart();
-      navigate(`/order-confirmed/${order.orderNumber}`);
-    } catch (err) {
-      toast.error(errMsg(err));
+      navigate(`/order-confirmed/${order.orderNumber}?phone=${encodeURIComponent(form.phone.trim())}`, { state: { order } });
+    } catch (error) {
+      toast.error(errMsg(error));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const inputCls =
-    "w-full border border-wine-100 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-wine-400 focus:ring-2 focus:ring-wine-100";
-
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-      <h1 className="font-display text-3xl font-semibold text-wine-800 mb-6">Checkout</h1>
+    <div className="mx-auto min-h-screen max-w-xl px-4 pb-8 pt-5 sm:px-6">
+      <div className="mb-8 flex items-center gap-4"><button onClick={() => navigate(-1)} className="rounded-full border border-wine-100 bg-white p-2.5 text-wine-700"><ArrowLeft className="h-5 w-5" /></button><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-wine-500">Final step</p><h1 className="font-display text-3xl font-semibold text-wine-800">Checkout</h1></div></div>
 
-      <div className="grid lg:grid-cols-5 gap-6">
-        <div className="lg:col-span-3 space-y-5">
-          {/* Fulfilment */}
-          <section className="bg-white rounded-2xl border border-wine-100 p-5">
-            <h2 className="font-medium text-cocoa-900 mb-4">1 · Pickup or Delivery</h2>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              <button
-                onClick={() => setFulfilmentType("pickup")}
-                className={`px-4 py-3 rounded-xl border text-sm font-medium transition-colors ${
-                  fulfilmentType === "pickup" ? "border-wine-600 bg-wine-50 text-wine-800" : "border-wine-100 hover:border-wine-300"
-                }`}
-              >
-                Store Pickup
-              </button>
-              <button
-                onClick={() => deliveryEnabled ? setFulfilmentType("delivery") : toast.error("Delivery is currently unavailable")}
-                className={`px-4 py-3 rounded-xl border text-sm font-medium transition-colors ${
-                  fulfilmentType === "delivery" ? "border-wine-600 bg-wine-50 text-wine-800" : "border-wine-100 hover:border-wine-300"
-                } ${!deliveryEnabled ? "opacity-50" : ""}`}
-              >
-                Delivery {deliveryEnabled ? `(+${inr(settings.delivery.fee || 0)})` : "(unavailable)"}
-              </button>
-            </div>
+      <section className="space-y-5">
+        <label className="block"><span className="text-sm font-medium text-cocoa-700">Name *</span><input value={form.name} onChange={setField("name")} autoComplete="name" className={inputClass} /></label>
+        <label className="block"><span className="text-sm font-medium text-cocoa-700">Email</span><input value={form.email} onChange={setField("email")} type="email" autoComplete="email" className={inputClass} /></label>
+        <label className="block"><span className="text-sm font-medium text-cocoa-700">Mobile number for order notifications *</span><div className="mt-1.5 flex rounded-xl border border-wine-100 bg-white focus-within:border-wine-400 focus-within:ring-2 focus-within:ring-wine-100"><span className="border-r border-wine-100 px-4 py-3 text-sm text-cocoa-500">+91</span><input value={form.phone} onChange={setField("phone")} inputMode="tel" autoComplete="tel" className="min-w-0 flex-1 bg-transparent px-4 py-3 text-sm outline-none" /></div></label>
+      </section>
 
-            <div className="grid sm:grid-cols-2 gap-3">
-              <label className="block">
-                <span className="text-xs font-medium text-cocoa-600">Date</span>
-                <input type="date" min={daysFromNow(0)} value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
-              </label>
-              {fulfilmentType === "pickup" && (settings?.pickup?.slots?.length || 0) > 0 && (
-                <label className="block">
-                  <span className="text-xs font-medium text-cocoa-600">Pickup Slot</span>
-                  <select value={slot} onChange={(e) => setSlot(e.target.value)} className={inputCls}>
-                    {settings.pickup.slots.map((s) => (
-                      <option key={s}>{s}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
+      <section className="mt-6 border-y border-wine-100 py-5"><div className="flex items-start gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-wine-50 text-wine-700">{type === "delivery" ? <Truck className="h-4 w-4" /> : <Store className="h-4 w-4" />}</span><div><p className="text-xs font-semibold uppercase tracking-wide text-wine-600">Your order slot</p><p className="mt-1 text-sm font-medium text-cocoa-900">{prettyDate(date)}, {slot}</p><p className="text-xs text-cocoa-400">Based on items in your cart.</p></div></div></section>
 
-            {fulfilmentType === "delivery" && (
-              <div className="grid sm:grid-cols-2 gap-3 mt-3">
-                <label className="block sm:col-span-2">
-                  <span className="text-xs font-medium text-cocoa-600">Address line 1</span>
-                  <input value={form.line1} onChange={set("line1")} placeholder="Flat / house, street" className={inputCls} />
-                </label>
-                <label className="block sm:col-span-2">
-                  <span className="text-xs font-medium text-cocoa-600">Landmark (optional)</span>
-                  <input value={form.line2} onChange={set("line2")} className={inputCls} />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-medium text-cocoa-600">City</span>
-                  <input value={form.city} onChange={set("city")} className={inputCls} />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-medium text-cocoa-600">Pincode</span>
-                  <input value={form.pincode} onChange={set("pincode")} className={inputCls} />
-                  {settings?.delivery?.pincodes?.length > 0 && (
-                    <span className="text-[11px] text-cocoa-400">We deliver to: {settings.delivery.pincodes.join(", ")}</span>
-                  )}
-                </label>
-              </div>
-            )}
-          </section>
+      {type === "delivery" && <section className="border-b border-wine-100 py-5"><div className="mb-3 flex items-center gap-2 text-sm font-semibold text-cocoa-900"><MapPin className="h-4 w-4 text-wine-600" /> Delivery address</div><div className="grid gap-3"><input value={address.line1} onChange={(event) => updateAddress("line1", event.target.value)} placeholder="Address line" className={inputClass} /><input value={address.line2} onChange={(event) => updateAddress("line2", event.target.value)} placeholder="Landmark or area" className={inputClass} /><div className="grid grid-cols-2 gap-3"><input value={address.city} onChange={(event) => updateAddress("city", event.target.value)} placeholder="City" className={inputClass} /><input value={address.pincode} onChange={(event) => updateAddress("pincode", event.target.value)} placeholder="Pincode" inputMode="numeric" className={inputClass} /></div></div></section>}
 
-          {/* Contact */}
-          <section className="bg-white rounded-2xl border border-wine-100 p-5">
-            <h2 className="font-medium text-cocoa-900 mb-4">2 · Your Details</h2>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <label className="block">
-                <span className="text-xs font-medium text-cocoa-600">Name *</span>
-                <input value={form.name} onChange={set("name")} className={inputCls} />
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium text-cocoa-600">Phone *</span>
-                <input value={form.phone} onChange={set("phone")} placeholder="10-digit mobile" className={inputCls} />
-              </label>
-              <label className="block sm:col-span-2">
-                <span className="text-xs font-medium text-cocoa-600">Email (optional)</span>
-                <input value={form.email} onChange={set("email")} type="email" className={inputCls} />
-              </label>
-              <label className="block sm:col-span-2">
-                <span className="text-xs font-medium text-cocoa-600">Special instructions</span>
-                <textarea value={specialInstructions} onChange={(e) => setSpecialInstructions(e.target.value)} rows={2} className={inputCls} />
-              </label>
-            </div>
-          </section>
+      <section className="border-b border-wine-100 py-5"><label className="text-sm font-medium text-cocoa-700">Add more instructions</label><textarea value={instructions} onChange={(event) => setInstructions(event.target.value)} rows={2} className={inputClass} placeholder="Optional" /></section>
 
-          {/* Payment */}
-          <section className="bg-white rounded-2xl border border-wine-100 p-5">
-            <h2 className="font-medium text-cocoa-900 mb-4">3 · Payment</h2>
-            <div className="space-y-2">
-              {methods.map((m) => (
-                <label
-                  key={m}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer text-sm transition-colors ${
-                    paymentMethod === m ? "border-wine-600 bg-wine-50" : "border-wine-100 hover:border-wine-300"
-                  }`}
-                >
-                  <input type="radio" checked={paymentMethod === m} onChange={() => setPaymentMethod(m)} className="accent-wine-600" />
-                  {METHOD_LABELS[m] || m}
-                </label>
-              ))}
-            </div>
-          </section>
-        </div>
+      <section className="py-5"><h2 className="mb-3 text-sm font-semibold text-cocoa-900">Payment method</h2><div className="space-y-2">{methods.map((method) => <label key={method} className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm ${selectedPayment === method ? "border-wine-600 bg-wine-50" : "border-wine-100 bg-white"}`}><input type="radio" checked={selectedPayment === method} onChange={() => setPaymentMethod(method)} className="accent-wine-700" />{METHOD_LABELS[method] || method}</label>)}</div></section>
 
-        {/* Summary */}
-        <div className="lg:col-span-2">
-          <div className="bg-white rounded-2xl border border-wine-100 p-5 sticky top-24">
-            <h2 className="font-medium text-cocoa-900 mb-4">Order Summary</h2>
-            <div className="space-y-2 max-h-56 overflow-auto pr-1">
-              {cart.map((i, idx) => (
-                <div key={idx} className="flex justify-between text-sm gap-2">
-                  <span className="text-cocoa-600 min-w-0 truncate">
-                    {i.quantity}× {i.name}
-                    {i.variantName ? ` (${i.variantName})` : ""}
-                  </span>
-                  <span className="text-cocoa-900 shrink-0">
-                    {inr((i.unitPrice + (i.addOns || []).reduce((s, a) => s + a.price, 0)) * i.quantity)}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 pt-3 border-t border-wine-100 space-y-1.5 text-sm">
-              <div className="flex justify-between text-cocoa-500">
-                <span>Subtotal</span>
-                <span>{inr(totalPrice)}</span>
-              </div>
-              {fulfilmentType === "delivery" && (
-                <div className="flex justify-between text-cocoa-500">
-                  <span>Delivery</span>
-                  <span>{deliveryFee > 0 ? inr(deliveryFee) : "Free"}</span>
-                </div>
-              )}
-              {settings?.tax?.enabled && !settings.tax.inclusive && (
-                <div className="flex justify-between text-cocoa-500">
-                  <span>{settings.tax.label} ({settings.tax.rate}%)</span>
-                  <span>{inr(((totalPrice) * settings.tax.rate) / 100)}</span>
-                </div>
-              )}
-              <div className="flex justify-between font-semibold text-base pt-2">
-                <span>Total</span>
-                <span className="text-wine-700">{inr(totalPrice + deliveryFee + (settings?.tax?.enabled && !settings.tax.inclusive ? (totalPrice * settings.tax.rate) / 100 : 0))}</span>
-              </div>
-            </div>
-            <button
-              onClick={submit}
-              disabled={submitting}
-              className="mt-5 w-full inline-flex items-center justify-center gap-2 bg-wine-700 hover:bg-wine-800 disabled:opacity-60 text-white font-medium px-6 py-3 rounded-full transition-colors"
-            >
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {paymentMethod === "razorpay" ? "Pay & Place Order" : "Place Order"}
-            </button>
-            <p className="text-[11px] text-cocoa-400 text-center mt-3">
-              You'll get an order number to track your order anytime.
-            </p>
-          </div>
-        </div>
-      </div>
+      <section className="mt-8 border-t border-wine-100 pt-5"><div className="space-y-2 text-sm text-cocoa-500"><div className="flex justify-between"><span>Items</span><span>{inr(totalPrice)}</span></div>{tax > 0 && <div className="flex justify-between"><span>{settings.tax.label}</span><span>{inr(tax)}</span></div>}{type === "delivery" && <div className="flex justify-between"><span>Delivery</span><span>{deliveryFee ? inr(deliveryFee) : "Free"}</span></div>}</div><div className="mt-4 flex justify-between text-xl font-semibold text-cocoa-900"><span>To pay</span><span>{inr(total)}</span></div><button onClick={submit} disabled={submitting} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3.5 text-sm font-semibold text-white disabled:opacity-60">{submitting && <Loader2 className="h-4 w-4 animate-spin" />}{selectedPayment === "razorpay" ? "Pay now" : "Place order"}</button></section>
     </div>
   );
 }

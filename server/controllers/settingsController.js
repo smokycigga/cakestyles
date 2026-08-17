@@ -16,7 +16,7 @@ export const publicSettings = async (req, res) => {
   });
 };
 
-const EDITABLE_FIELDS = ["store", "tax", "delivery", "pickup", "paymentMethods", "invoice"];
+const EDITABLE_FIELDS = ["store", "tax", "delivery", "pickup", "paymentMethods", "invoice", "loyalty"];
 
 export const getSettings = [protect, requirePerm("settings:read"), async (req, res) => {
   const s = await Setting.getSettings();
