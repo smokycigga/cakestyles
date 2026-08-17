@@ -4,6 +4,7 @@ import { Plus, Download, Search } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { errMsg } from "../../lib/api";
 import { inr, fmtDate } from "../../lib/format";
+import { downloadInvoicePdf } from "../../lib/invoiceRender";
 import { INVOICE_STATUS_META } from "../../lib/meta";
 import { PageHeader, Spinner, Th, Td, TableWrap, EmptyState, Badge, Button, inputCls, Modal, Field, StatCard } from "../../components/admin/ui";
 import { useAuth } from "../../store/AuthContext";
@@ -59,6 +60,16 @@ export default function Invoices() {
   };
 
   const lineTotal = lines.reduce((s, l) => s + ((Number(l.unitPrice) || 0) * (Number(l.quantity) || 0)), 0);
+
+  // List rows omit line items, so fetch the full invoice before rendering the PDF.
+  const downloadPdf = async (inv) => {
+    try {
+      const { data } = await api.get(`/invoices/${inv._id}`);
+      await downloadInvoicePdf(data.invoice);
+    } catch (err) {
+      toast.error(errMsg(err));
+    }
+  };
 
   return (
     <div>
@@ -127,6 +138,7 @@ export default function Invoices() {
               <Th>Paid</Th>
               <Th>Balance</Th>
               <Th>Status</Th>
+              <Th></Th>
             </tr>
           </thead>
           <tbody>
@@ -143,6 +155,16 @@ export default function Invoices() {
                 <Td className="text-emerald-700">{inr(inv.amountPaid)}</Td>
                 <Td className={inv.balanceDue > 0 ? "text-rose-700 font-medium" : "text-cocoa-400"}>{inv.balanceDue > 0 ? inr(inv.balanceDue) : "—"}</Td>
                 <Td><Badge className={INVOICE_STATUS_META[inv.status]?.color}>{INVOICE_STATUS_META[inv.status]?.label}</Badge></Td>
+                <Td>
+                  <button
+                    type="button"
+                    title="Download PDF"
+                    onClick={() => downloadPdf(inv)}
+                    className="text-cocoa-400 hover:text-wine-700 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </Td>
               </tr>
             ))}
           </tbody>
