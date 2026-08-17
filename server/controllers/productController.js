@@ -1,0 +1,315 @@
+import { z } from "zod";
+
+import Product from "../models/Product.js";
+import Category from "../models/Category.js";
+import {
+  PRODUCT_AVAILABILITY,
+  PRODUCT_ORDERABILITY,
+  PRODUCT_STATUS,
+} from "../config/constants.js";
+import { protect, requirePerm } from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { slugify } from "../utils/misc.js";
+import { writeAudit } from "../utils/audit.js";
+import { sendCSV } from "../utils/csv.js";
+
+const variantSchema = z.object({ name: z.string().min(1), price: z.number().min(0) });
+const addOnSchema = z.object({ name: z.string().min(1), price: z.number().min(0) });
+
+const productFields = {
+  name: z.string().min(1),
+  sku: z.string().optional(),
+  category: z.string().min(1),
+  shortDescription: z.string().optional(),
+  description: z.string().min(1),
+  images: z.array(z.string()).optional(),
+  basePrice: z.number().min(0),
+  variants: z.array(variantSchema).optional(),
+  addOns: z.array(addOnSchema).optional(),
+  availability: z.enum(PRODUCT_AVAILABILITY).optional(),
+  orderability: z.enum(PRODUCT_ORDERABILITY).optional(),
+  featured: z.boolean().optional(),
+  tags: z.array(z.string()).optional(),
+  prepTimeHours: z.number().min(0).optional(),
+  taxRate: z.number().min(0).max(100).nullable().optional(),
+  costPrice: z.number().min(0).nullable().optional(),
+  internalNotes: z.string().optional(),
+  status: z.enum(PRODUCT_STATUS).optional(),
+  publishAt: z.string().nullable().optional(),
+  seo: z.object({ title: z.string().optional(), description: z.string().optional() }).optional(),
+};
+
+const createSchema = z.object(productFields);
+const updateSchema = z.object(productFields).partial();
+
+const AUDIT_FIELDS = [
+  "name", "basePrice", "category", "availability", "orderability", "featured",
+  "status", "variants", "addOns", "taxRate", "costPrice",
+];
+
+// Scheduled products auto-appear once publishAt passes.
+const publicFilter = () => ({
+  $or: [{ status: "published" }, { status: "scheduled", publishAt: { $lte: new Date() } }],
+});
+
+const uniqueSlug = async (base) => {
+  let slug = slugify(base) || "product";
+  let i = 2;
+  while (await Product.exists({ slug })) {
+    slug = `${slugify(base)}-${i++}`;
+  }
+  return slug;
+};
+
+export const listPublic = async (req, res) => {
+  const filter = { ...publicFilter() };
+
+  if (req.query.category) {
+    const cat = await Category.findOne({ slug: req.query.category });
+    if (!cat) return res.json({ products: [] });
+    filter.category = cat._id;
+  }
+  if (req.query.featured === "1") filter.featured = true;
+  if (req.query.search) {
+    filter.$and = [
+      publicFilter(),
+      { $or: [
+        { name: new RegExp(req.query.search, "i") },
+        { shortDescription: new RegExp(req.query.search, "i") },
+        { tags: new RegExp(req.query.search, "i") },
+      ] },
+    ];
+    delete filter.$or;
+  }
+
+  const products = await Product.find(filter)
+    .populate("category", "name slug")
+    .sort({ featured: -1, name: 1 });
+
+  res.json({ products });
+};
+
+export const getPublic = async (req, res) => {
+  const product = await Product.findOne({ slug: req.params.slug, ...publicFilter() }).populate(
+    "category",
+    "name slug"
+  );
+  if (!product) return res.status(404).json({ message: "Product not found" });
+  res.json({ product });
+};
+
+export const listAdmin = [protect, requirePerm("catalog:read"), async (req, res) => {
+  const filter = {};
+  if (req.query.status) filter.status = req.query.status;
+  if (req.query.category) filter.category = req.query.category;
+  if (req.query.availability) filter.availability = req.query.availability;
+  if (req.query.search) {
+    filter.$or = [
+      { name: new RegExp(req.query.search, "i") },
+      { sku: new RegExp(req.query.search, "i") },
+    ];
+  }
+
+  const products = await Product.find(filter)
+    .populate("category", "name slug")
+    .sort({ updatedAt: -1 });
+
+  res.json({ products });
+}];
+
+export const getAdmin = [protect, requirePerm("catalog:read"), async (req, res) => {
+  const product = await Product.findById(req.params.id).populate("category", "name slug");
+  if (!product) return res.status(404).json({ message: "Product not found" });
+  res.json({ product });
+}];
+
+export const create = [protect, requirePerm("catalog:write"), validate(createSchema), async (req, res) => {
+  const body = req.body;
+  if (!body.publishAt) body.publishAt = null;
+
+  const product = await Product.create({
+    ...body,
+    slug: await uniqueSlug(body.name),
+  });
+
+  await writeAudit({ req, action: "product.create", entity: "Product", entityId: product._id });
+  res.status(201).json({ product });
+}];
+
+export const update = [protect, requirePerm("catalog:write"), validate(updateSchema), async (req, res) => {
+  const product = await Product.findById(req.params.id);
+  if (!product) return res.status(404).json({ message: "Product not found" });
+
+  const before = product.toObject();
+  Object.assign(product, req.body);
+  await product.save();
+
+  await writeAudit({
+    req,
+    action: "product.update",
+    entity: "Product",
+    entityId: product._id,
+    before,
+    after: product.toObject(),
+    fields: AUDIT_FIELDS,
+  });
+
+  res.json({ product });
+}];
+
+// Archive, never hard delete: history must survive (PRD §9.3, §22.2).
+export const archive = [protect, requirePerm("catalog:write"), async (req, res) => {
+  const product = await Product.findById(req.params.id);
+  if (!product) return res.status(404).json({ message: "Product not found" });
+
+  product.status = "archived";
+  await product.save();
+
+  await writeAudit({ req, action: "product.archive", entity: "Product", entityId: product._id });
+  res.json({ product });
+}];
+
+export const duplicate = [protect, requirePerm("catalog:write"), async (req, res) => {
+  const source = await Product.findById(req.params.id);
+  if (!source) return res.status(404).json({ message: "Product not found" });
+
+  const copy = source.toObject();
+  delete copy._id;
+  delete copy.createdAt;
+  delete copy.updatedAt;
+  copy.name = `${source.name} (Copy)`;
+  copy.slug = await uniqueSlug(copy.name);
+  copy.sku = source.sku ? `${source.sku}-C` : "";
+  copy.status = "draft";
+  copy.featured = false;
+
+  const product = await Product.create(copy);
+  await writeAudit({ req, action: "product.duplicate", entity: "Product", entityId: product._id, meta: `from ${source.name}` });
+  res.status(201).json({ product });
+}];
+
+const bulkSchema = z.object({
+  ids: z.array(z.string()).min(1),
+  action: z.enum(["publish", "unpublish", "activate", "pause", "sold_out", "price"]),
+  priceChange: z.object({ type: z.enum(["percent", "flat"]), value: z.number() }).optional(),
+});
+
+export const bulkUpdate = [protect, requirePerm("catalog:write"), validate(bulkSchema), async (req, res) => {
+  const { ids, action, priceChange } = req.body;
+  let modifier = {};
+
+  switch (action) {
+    case "publish": modifier = { status: "published" }; break;
+    case "unpublish": modifier = { status: "draft" }; break;
+    case "activate": modifier = { availability: "active" }; break;
+    case "pause": modifier = { availability: "paused" }; break;
+    case "sold_out": modifier = { availability: "sold_out" }; break;
+    case "price": {
+      if (!priceChange) return res.status(400).json({ message: "priceChange required for price action" });
+      const products = await Product.find({ _id: { $in: ids } });
+      for (const p of products) {
+        const delta = priceChange.type === "percent"
+          ? (p.basePrice * priceChange.value) / 100
+          : priceChange.value;
+        p.basePrice = Math.max(0, Math.round((p.basePrice + delta) * 100) / 100);
+        await p.save();
+      }
+      await writeAudit({ req, action: "product.bulkPrice", entity: "Product", meta: `${ids.length} products, ${JSON.stringify(priceChange)}` });
+      return res.json({ updated: ids.length });
+    }
+  }
+
+  const result = await Product.updateMany({ _id: { $in: ids } }, modifier);
+  await writeAudit({ req, action: `product.bulk.${action}`, entity: "Product", meta: `${ids.length} products` });
+  res.json({ updated: result.modifiedCount });
+}];
+
+export const exportCsv = [protect, requirePerm("catalog:read"), async (req, res) => {
+  const products = await Product.find().populate("category", "name").sort({ name: 1 });
+  sendCSV(res, "cakestyles-products.csv", products, [
+    { label: "name", key: "name" },
+    { label: "sku", key: "sku" },
+    { label: "category", get: (p) => p.category?.name || "" },
+    { label: "basePrice", key: "basePrice" },
+    { label: "shortDescription", key: "shortDescription" },
+    { label: "description", key: "description" },
+    { label: "availability", key: "availability" },
+    { label: "orderability", key: "orderability" },
+    { label: "status", key: "status" },
+    { label: "featured", get: (p) => (p.featured ? "yes" : "no") },
+    { label: "tags", get: (p) => p.tags.join("|") },
+    { label: "variants", get: (p) => p.variants.map((v) => `${v.name}=${v.price}`).join("|") },
+    { label: "addOns", get: (p) => p.addOns.map((a) => `${a.name}=${a.price}`).join("|") },
+    { label: "prepTimeHours", key: "prepTimeHours" },
+    { label: "taxRate", get: (p) => p.taxRate ?? "" },
+  ]);
+}];
+
+const importSchema = z.object({
+  rows: z.array(z.record(z.string(), z.unknown())).min(1),
+});
+
+// CSV import: upserts by name, creates missing categories (PRD §9.2).
+export const importCsv = [protect, requirePerm("catalog:write"), validate(importSchema), async (req, res) => {
+  const { rows } = req.body;
+  let created = 0;
+  let updated = 0;
+  const errors = [];
+
+  for (const [i, row] of rows.entries()) {
+    try {
+      const name = String(row.name || "").trim();
+      const categoryName = String(row.category || "").trim();
+      if (!name || !categoryName) throw new Error("name and category are required");
+
+      let category = await Category.findOne({ slug: slugify(categoryName) });
+      if (!category) {
+        category = await Category.create({ name: categoryName, slug: slugify(categoryName) });
+      }
+
+      const doc = {
+        name,
+        category: category._id,
+        sku: String(row.sku || ""),
+        shortDescription: String(row.shortDescription || ""),
+        description: String(row.description || name),
+        basePrice: Number(row.basePrice) || 0,
+        availability: PRODUCT_AVAILABILITY.includes(row.availability) ? row.availability : "active",
+        orderability: PRODUCT_ORDERABILITY.includes(row.orderability) ? row.orderability : "online",
+        status: PRODUCT_STATUS.includes(row.status) ? row.status : "draft",
+        featured: String(row.featured).toLowerCase() === "yes",
+        tags: String(row.tags || "").split("|").map((t) => t.trim()).filter(Boolean),
+        prepTimeHours: Number(row.prepTimeHours) || 24,
+        taxRate: row.taxRate === "" || row.taxRate == null ? null : Number(row.taxRate),
+      };
+
+      if (row.variants) {
+        doc.variants = String(row.variants).split("|").map((v) => {
+          const [vn, vp] = v.split("=");
+          return { name: vn?.trim(), price: Number(vp) || 0 };
+        }).filter((v) => v.name);
+      }
+      if (row.addOns) {
+        doc.addOns = String(row.addOns).split("|").map((a) => {
+          const [an, ap] = a.split("=");
+          return { name: an?.trim(), price: Number(ap) || 0 };
+        }).filter((a) => a.name);
+      }
+
+      const existing = await Product.findOne({ name });
+      if (existing) {
+        Object.assign(existing, doc);
+        await existing.save();
+        updated++;
+      } else {
+        await Product.create({ ...doc, slug: await uniqueSlug(name) });
+        created++;
+      }
+    } catch (err) {
+      errors.push(`Row ${i + 2}: ${err.message}`);
+    }
+  }
+
+  await writeAudit({ req, action: "product.import", entity: "Product", meta: `created ${created}, updated ${updated}` });
+  res.json({ created, updated, errors });
+}];

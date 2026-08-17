@@ -1,0 +1,52 @@
+import { createContext, useContext, useState } from "react";
+import api from "../lib/api";
+
+const AuthContext = createContext(null);
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("cs_user") || "null");
+    } catch {
+      return null;
+    }
+  });
+
+  const login = async (email, password) => {
+    const res = await api.post("/auth/login", { email, password });
+    localStorage.setItem("cs_token", res.data.token);
+    localStorage.setItem("cs_user", JSON.stringify(res.data.user));
+    setUser(res.data.user);
+    return res.data.user;
+  };
+
+  const logout = () => {
+    localStorage.removeItem("cs_token");
+    localStorage.removeItem("cs_user");
+    setUser(null);
+  };
+
+  const can = (perm) => {
+    // Mirrors the server matrix for UI affordances only; server enforces.
+    const PERMISSIONS = {
+      "catalog:write": ["owner", "manager"],
+      "orders:write": ["owner", "manager", "staff"],
+      "customers:write": ["owner", "manager"],
+      "finance:write": ["owner", "accounts"],
+      "expenses:write": ["owner", "accounts"],
+      "analytics:read": ["owner", "manager", "accounts"],
+      "settings:write": ["owner"],
+      "users:manage": ["owner"],
+      "audit:read": ["owner"],
+    };
+    return !!user && (PERMISSIONS[perm] || []).includes(user.role);
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, can }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => useContext(AuthContext);

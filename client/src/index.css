@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
+
+  /* Cakestyles brand: warm wine + blush pink + cream */
+  --color-wine-50: #fbf3f6;
+  --color-wine-100: #f5e3ea;
+  --color-wine-200: #e9c6d3;
+  --color-wine-300: #d69cb2;
+  --color-wine-400: #bd6c8c;
+  --color-wine-500: #a44a6f;
+  --color-wine-600: #8c3559;
+  --color-wine-700: #6d2141;
+  --color-wine-800: #571b35;
+  --color-wine-900: #3f1427;
+
+  --color-blush-50: #fff7f9;
+  --color-blush-100: #ffecf1;
+  --color-blush-200: #ffd9e3;
+  --color-blush-300: #ffbdcf;
+  --color-blush-400: #ff92ae;
+  --color-blush-500: #fb6e93;
+
+  --color-cream-50: #fffcf8;
+  --color-cream-100: #fdf6ee;
+  --color-cream-200: #f7ead7;
+  --color-cream-300: #eed9bc;
+
+  --color-cocoa-500: #6b4a3a;
+  --color-cocoa-700: #4a3126;
+  --color-cocoa-900: #2e1e16;
+
+  --color-gold-300: #e8cf8f;
+  --color-gold-400: #d4b06a;
+  --color-gold-500: #c9a227;
+  --color-gold-600: #a8851b;
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.animate-marquee {
+  animation: marquee linear infinite;
+  will-change: transform;
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+.animate-spin-slow {
+  animation: spin-slow 18s linear infinite;
+}
+
+@keyframes float-soft {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+.animate-float {
+  animation: float-soft 6s ease-in-out infinite;
+}
+
+/* Subtle film grain for hero sections */
+.grain::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+/* Lenis smooth-scroll recommended styles */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-cream-50 text-cocoa-900 font-sans antialiased;
+}
+
+::selection {
+  background: var(--color-blush-300);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-cream-100);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-wine-300);
+  border-radius: 8px;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
