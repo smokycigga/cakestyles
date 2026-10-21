@@ -23,3 +23,4 @@ const expenseSchema = new mongoose.Schema(
 expenseSchema.index({ date: -1 });
 
 export default mongoose.model("Expense", expenseSchema);
+

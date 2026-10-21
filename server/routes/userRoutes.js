@@ -9,3 +9,4 @@ router.post("/", createUser);
 router.put("/:id", updateUser);
 
 export default router;
+

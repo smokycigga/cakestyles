@@ -89,13 +89,17 @@ export default function Settings() {
             <Field label="Instagram handle">
               <input disabled={!editable} value={getVal("store.instagram") || ""} onChange={(e) => set("store.instagram", e.target.value)} placeholder="@cakestyles" className={inputCls} />
             </Field>
-            <Field label="Address line">
+            <Field label="Address line" span={2}>
               <input disabled={!editable} value={getVal("store.address.line1") || ""} onChange={(e) => set("store.address.line1", e.target.value)} className={inputCls} />
             </Field>
             <Field label="City">
               <input disabled={!editable} value={getVal("store.address.city") || ""} onChange={(e) => set("store.address.city", e.target.value)} className={inputCls} />
             </Field>
+            <Field label="Pincode">
+              <input disabled={!editable} value={getVal("store.address.pincode") || ""} onChange={(e) => set("store.address.pincode", e.target.value)} placeholder="700001" className={inputCls} />
+            </Field>
           </div>
+          <p className="text-[11px] text-cocoa-400">Address and pincode are printed in the invoice header.</p>
           <div>
             <span className="text-xs font-medium text-cocoa-600">Opening hours</span>
             <div className="space-y-2 mt-1">

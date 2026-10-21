@@ -19,3 +19,4 @@ auditLogSchema.index({ createdAt: -1 });
 auditLogSchema.index({ entity: 1, entityId: 1 });
 
 export default mongoose.model("AuditLog", auditLogSchema);
+

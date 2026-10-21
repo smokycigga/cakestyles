@@ -27,8 +27,11 @@ export default function OrderDetail() {
 
   const changeStatus = async (status) => {
     try {
-      await api.put(`/orders/${order._id}/status`, { status });
+      const { data } = await api.put(`/orders/${order._id}/status`, { status });
       toast.success(`Status → ${ORDER_STATUS_META[status].label}`);
+      // Cancelling closes the linked invoice, or reports that it holds money and
+      // needs a refund decision. Either way staff have to hear about it.
+      if (data.invoiceNote) toast(data.invoiceNote, { duration: 8000, icon: "🧾" });
       load();
     } catch (err) {
       toast.error(errMsg(err));
@@ -58,6 +61,17 @@ export default function OrderDetail() {
       const { data } = await api.post(`/invoices/from-order/${order._id}`);
       toast.success(`Invoice ${data.invoice.invoiceNumber} created`);
       navigate(`/admin/invoices/${data.invoice._id}`);
+    } catch (err) {
+      toast.error(errMsg(err));
+    }
+  };
+
+  const deleteOrder = async () => {
+    if (!confirm(`Delete order ${order.orderNumber}? This also deletes its linked invoice (if any) and cannot be undone.`)) return;
+    try {
+      await api.delete(`/orders/${order._id}`);
+      toast.success("Order deleted");
+      navigate("/admin/orders");
     } catch (err) {
       toast.error(errMsg(err));
     }
@@ -116,6 +130,7 @@ export default function OrderDetail() {
             <div className="mt-4 pt-3 border-t border-wine-100 space-y-1 text-sm">
               <div className="flex justify-between text-cocoa-500"><span>Subtotal</span><span>{inr(order.subtotal)}</span></div>
               {order.deliveryFee > 0 && <div className="flex justify-between text-cocoa-500"><span>Delivery</span><span>{inr(order.deliveryFee)}</span></div>}
+              {order.discount > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>- {inr(order.discount)}</span></div>}
               {order.taxTotal > 0 && <div className="flex justify-between text-cocoa-500"><span>Tax</span><span>{inr(order.taxTotal)}</span></div>}
               <div className="flex justify-between font-semibold text-base pt-1"><span>Total</span><span className="text-wine-700">{inr(order.grandTotal)}</span></div>
               <div className="flex justify-between text-cocoa-500"><span>Paid</span><span className="text-emerald-700">{inr(order.amountPaid)}</span></div>
@@ -186,6 +201,16 @@ export default function OrderDetail() {
               </div>
             </div>
           </div>
+
+          {can("orders:write") && (
+            <div className="bg-white rounded-2xl border border-rose-100 p-5">
+              <h3 className="text-sm font-semibold text-rose-700 mb-3">Danger zone</h3>
+              <Button variant="danger" onClick={deleteOrder}>Delete Order</Button>
+              <p className="text-[11px] text-cocoa-400 mt-3">
+                Deletes this order and its linked invoice (if any). This cannot be undone.
+              </p>
+            </div>
+          )}
 
           <div className="bg-white rounded-2xl border border-wine-100 p-5">
             <h3 className="text-sm font-semibold text-cocoa-900 mb-3">Customer</h3>

@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
-import { PageHeader } from "../../components/admin/ui";
+import toast from "react-hot-toast";
+import api, { downloadFile, errMsg } from "../../lib/api";
+import { Button, PageHeader, inputCls } from "../../components/admin/ui";
 import { useAuth } from "../../store/AuthContext";
 
 const REPORTS = [
@@ -17,16 +19,32 @@ const RANGES = [
   ["this_month", "This month"],
   ["last_month", "Last month"],
   ["this_quarter", "This quarter"],
+  ["all", "All time"],
   ["custom", "Custom range"],
 ];
+
+// Same slug the server uses for Content-Disposition, so the file a browser
+// saves under (the client's download attribute wins) still names the customer.
+const slugify = (text) =>
+  String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "customer";
 
 export default function Reports() {
   const { can } = useAuth();
   const [range, setRange] = useState("30d");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [busy, setBusy] = useState("");
+  const [customers, setCustomers] = useState([]);
+  const [customerId, setCustomerId] = useState("");
+  const [busyStatement, setBusyStatement] = useState(false);
 
-  const url = (key) => {
+  // Only read for the statement card, which needs analytics:read to download —
+  // always a permission held alongside customers:read, so this never 403s.
+  useEffect(() => {
+    api.get("/customers").then((r) => setCustomers(r.data.customers)).catch(() => {});
+  }, []);
+
+  const query = () => {
     const params = new URLSearchParams();
     if (range === "custom" && from && to) {
       params.set("from", from);
@@ -34,7 +52,39 @@ export default function Reports() {
     } else if (range !== "custom") {
       params.set("range", range);
     }
-    return `/api/reports/${key}.csv?${params}`;
+    return params.toString();
+  };
+
+  // A plain <a href> cannot carry the Authorization header, so every one of
+  // these buttons used to open a tab reading {"message":"Not authenticated"}.
+  // downloadFile pulls the CSV through the authenticated client instead.
+  const download = async (key) => {
+    setBusy(key);
+    try {
+      await downloadFile(`/reports/${key}.csv?${query()}`, `cakestyles-${key}.csv`);
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const downloadStatement = async () => {
+    const customer = customers.find((c) => c._id === customerId);
+    const params = new URLSearchParams(query());
+    params.set("customerId", customerId);
+
+    setBusyStatement(true);
+    try {
+      await downloadFile(
+        `/reports/customer-statement.csv?${params.toString()}`,
+        `cakestyles-statement-${slugify(customer?.name)}.csv`
+      );
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setBusyStatement(false);
+    }
   };
 
   return (
@@ -60,20 +110,40 @@ export default function Reports() {
       />
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {REPORTS.filter((r) => can(r.perm) || r.perm === "customers:read").map((r) => (
+        {REPORTS.filter((r) => can(r.perm)).map((r) => (
           <div key={r.key} className="bg-white rounded-2xl border border-wine-100 p-5 flex flex-col">
             <h3 className="font-medium text-cocoa-900">{r.label}</h3>
             <p className="text-sm text-cocoa-500 mt-1.5 leading-relaxed flex-1">{r.desc}</p>
-            <a
-              href={url(r.key)}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-4 inline-flex items-center justify-center gap-2 bg-wine-700 hover:bg-wine-800 text-white font-medium text-sm px-4 py-2.5 rounded-xl transition-colors"
-            >
-              <Download className="w-4 h-4" /> Download CSV
-            </a>
+            <Button className="mt-4 py-2.5" disabled={busy === r.key} onClick={() => download(r.key)}>
+              <Download className="w-4 h-4" /> {busy === r.key ? "Preparing…" : "Download CSV"}
+            </Button>
           </div>
         ))}
+
+        {/* Asking for "the excel for one customer" is a different question from
+            the all-customers export, so it gets its own picker instead of
+            filtering a list someone then has to scroll. */}
+        {can("analytics:read") && (
+          <div className="bg-white rounded-2xl border border-wine-100 p-5 flex flex-col">
+            <h3 className="font-medium text-cocoa-900">Customer Statement</h3>
+            <p className="text-sm text-cocoa-500 mt-1.5 leading-relaxed flex-1">
+              One customer's orders and standalone invoices, oldest first — with what they paid and what is still due.
+            </p>
+            <select
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+              className={`${inputCls} mt-3`}
+            >
+              <option value="">Choose a customer…</option>
+              {customers.map((c) => (
+                <option key={c._id} value={c._id}>{c.name} · {c.phone}</option>
+              ))}
+            </select>
+            <Button className="mt-4 py-2.5" disabled={!customerId || busyStatement} onClick={downloadStatement}>
+              <Download className="w-4 h-4" /> {busyStatement ? "Preparing…" : "Download statement"}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

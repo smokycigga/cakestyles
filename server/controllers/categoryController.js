@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 import Category from "../models/Category.js";
-import { protect, requirePerm } from "../middleware/auth.js";
+import { optionalProtect, protect, requirePerm } from "../middleware/auth.js";
+import { PERMISSIONS } from "../middleware/permissions.js";
 import { validate } from "../middleware/validate.js";
 import { slugify } from "../utils/misc.js";
 import { writeAudit } from "../utils/audit.js";
@@ -14,12 +15,16 @@ const upsertSchema = z.object({
   image: z.string().optional(),
 });
 
-export const list = async (req, res) => {
-  const includeInactive = req.query.all === "1" && req.headers.authorization;
-  const filter = includeInactive ? {} : { active: true };
+// Public: the storefront needs the visible categories. ?all=1 additionally
+// returns hidden ones, but only for a role that may edit the catalogue — the
+// admin Menu screen and the product form both rely on it.
+export const list = [optionalProtect, async (req, res) => {
+  const canSeeHidden =
+    req.query.all === "1" && req.user && PERMISSIONS["catalog:read"].includes(req.user.role);
+  const filter = canSeeHidden ? {} : { active: true };
   const categories = await Category.find(filter).sort({ order: 1, name: 1 });
   res.json({ categories });
-};
+}];
 
 export const create = [protect, requirePerm("catalog:write"), validate(upsertSchema), async (req, res) => {
   const { name, description, order, active, image } = req.body;
@@ -77,3 +82,4 @@ export const remove = [protect, requirePerm("catalog:write"), async (req, res) =
   await writeAudit({ req, action: "category.delete", entity: "Category", entityId: category._id });
   res.json({ message: "Category deleted" });
 }];
+

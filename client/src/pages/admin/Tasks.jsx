@@ -216,22 +216,22 @@ export default function Tasks() {
               const overdue = !isDone && task.dueAt && new Date(task.dueAt) < new Date();
               return (
                 <tr key={task._id} className="hover:bg-wine-50/50">
-                  <Td className="min-w-64">
+                  <Td className="min-w-64" label="Task">
                     <div className={`font-medium ${isDone ? "text-cocoa-400 line-through" : "text-cocoa-800"}`}>{task.title}</div>
                     {task.description && <div className="mt-0.5 max-w-lg truncate text-xs text-cocoa-400">{task.description}</div>}
                   </Td>
-                  <Td>
+                  <Td label="Assigned to">
                     <div className="flex items-center gap-2 whitespace-nowrap text-sm text-cocoa-600">
                       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-wine-50 text-wine-600"><CircleUserRound className="h-4 w-4" /></span>
                       {assigneeName(task)}
                     </div>
                   </Td>
-                  <Td className={`whitespace-nowrap text-xs ${overdue ? "font-semibold text-rose-700" : "text-cocoa-400"}`}>
+                  <Td className={`whitespace-nowrap text-xs ${overdue ? "font-semibold text-rose-700" : "text-cocoa-400"}`} label="Due">
                     {task.dueAt ? <span className="inline-flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" />{fmtDate(task.dueAt)}{overdue ? " · overdue" : ""}</span> : "No due date"}
                   </Td>
-                  <Td><Badge className={PRIORITY_META[task.priority]?.color || PRIORITY_META.medium.color}>{PRIORITY_META[task.priority]?.label || task.priority}</Badge></Td>
-                  <Td><Badge className={STATUS_META[task.status]?.color || "bg-slate-100 text-slate-600"}>{STATUS_META[task.status]?.label || task.status}</Badge></Td>
-                  <Td>
+                  <Td label="Priority"><Badge className={PRIORITY_META[task.priority]?.color || PRIORITY_META.medium.color}>{PRIORITY_META[task.priority]?.label || task.priority}</Badge></Td>
+                  <Td label="Status"><Badge className={STATUS_META[task.status]?.color || "bg-slate-100 text-slate-600"}>{STATUS_META[task.status]?.label || task.status}</Badge></Td>
+                  <Td label="Actions">
                     <div className="flex justify-end gap-1">
                       <button type="button" onClick={() => openEdit(task)} className="rounded-lg p-2 text-cocoa-400 hover:bg-wine-50 hover:text-wine-700" aria-label={`Edit ${task.title}`}>
                         <Pencil className="h-4 w-4" />

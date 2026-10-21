@@ -1,0 +1,40 @@
+# Stale local build — Vercel rebuilds fresh via `npm run build`
+client/dist
+
+# Dependencies are installed during the Vercel build, never uploaded
+node_modules
+client/node_modules
+server/node_modules
+
+# VCS + local noise
+.git
+.vercel
+*.log
+server-err.log
+server-out.log
+
+# Secrets. Vercel's built-in ignore list covers .env.local and .env.*.local but
+# NOT a plain .env, so without these lines the live Atlas URI, the JWT signing
+# secret and the owner password are uploaded into the deployment source. The
+# function reads all of them from the project's environment variables instead.
+.env
+.env.*
+server/.env
+server/.env.*
+client/.env
+client/.env.*
+
+# Local-only scratch docs
+E2E_TEST_PLAN.md
+PRODUCTION_E2E_TEST_GUIDE.md
+MONGODB_CONNECTION_FIX.md
+quick-api-test.sh
+invoice-preview.html
+
+# Test suite and tooling — never executed in the deployed function
+server/tests
+vitest.config.js
+scripts
+.commandcode
+.workbuddy-ai
+.claude

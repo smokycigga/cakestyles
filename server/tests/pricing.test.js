@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { lineTotal, computeTotals, computeInvoiceTotals, paymentStatusFor, round2 } from "../utils/pricing.js";
+import { orderTotalsPreview } from "../../client/src/lib/invoiceTotals.js";
 
 describe("pricing engine", () => {
   it("computes line totals including add-ons", () => {
@@ -70,6 +71,41 @@ describe("invoice reproducibility (PRD §22.7)", () => {
   });
 });
 
+// The manual-order and enquiry-convert screens have to quote a total before any
+// order exists, so they read it from a client-side mirror of computeTotals. When
+// the mirror drifts the screen quotes one figure and the order is stored with
+// another — which is exactly how enquiry conversions came to be quoted untaxed.
+describe("client order-total preview matches the server engine", () => {
+  const cases = [
+    { name: "no tax at all", subtotal: 1000 },
+    { name: "exclusive tax", subtotal: 1000, taxRate: 5 },
+    { name: "inclusive tax", subtotal: 1050, taxRate: 5, taxInclusive: true },
+    { name: "exclusive tax over a fee and a discount", subtotal: 1000, deliveryFee: 50, discount: 100, taxRate: 18 },
+    { name: "inclusive tax over a fee and a discount", subtotal: 2360, deliveryFee: 90, discount: 200, taxRate: 18, taxInclusive: true },
+    { name: "a discount larger than the subtotal", subtotal: 200, discount: 500, taxRate: 5 },
+    { name: "a rate that does not divide cleanly", subtotal: 333.33, taxRate: 12.5 },
+    { name: "tax switched off while a rate is still configured", subtotal: 999, taxRate: 0, taxInclusive: true },
+  ];
+
+  for (const { name, subtotal, ...opts } of cases) {
+    it(`agrees on ${name}`, () => {
+      expect(orderTotalsPreview({ subtotal, ...opts })).toEqual(
+        computeTotals({ items: [{ lineTotal: subtotal }], ...opts })
+      );
+    });
+  }
+
+  it("quotes the taxed total from the string an input holds", () => {
+    // Both screens keep the amount as typed, so it arrives as a string.
+    expect(orderTotalsPreview({ subtotal: "5000", taxRate: 5 }).grandTotal).toBe(5250);
+  });
+
+  it("reads an empty field as zero rather than NaN", () => {
+    expect(orderTotalsPreview({ subtotal: "" }).grandTotal).toBe(0);
+    expect(orderTotalsPreview({ subtotal: undefined, taxRate: 5 }).taxTotal).toBe(0);
+  });
+});
+
 describe("historical price integrity (PRD §22.1–22.3)", () => {
   it("keeps order line snapshots independent of later product price changes", () => {
     // Order placed when the product cost 500.
@@ -85,3 +121,4 @@ describe("historical price integrity (PRD §22.1–22.3)", () => {
     expect(lineTotal({ unitPrice: 900, quantity: 2 })).toBe(1800);
   });
 });
+

@@ -3,6 +3,7 @@
 @theme {
   --font-sans: "Poppins", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Playfair Display", Georgia, serif;
+  --font-script: "Great Vibes", cursive;
 
   /* Cakestyles brand: warm wine + blush pink + cream */
   --color-wine-50: #fbf3f6;
@@ -28,8 +29,22 @@
   --color-cream-200: #f7ead7;
   --color-cream-300: #eed9bc;
 
+  /* Tailwind v4 generates a utility only for a shade declared here, and the
+     ramp used to declare 500/700/900 only — so the 203 uses of text-cocoa-400,
+     -600, -800 and friends across the app compiled to nothing at all. Every
+     muted caption, timestamp and field label inherited cocoa-900 instead and
+     rendered as full-strength body text, and ProductDetail's
+     `disabled:bg-cocoa-400` left a sold-out button looking green and clickable.
+     cocoa-400 is held at 4.6:1 on white so small print still passes AA. */
+  --color-cocoa-50: #faf6f3;
+  --color-cocoa-100: #eee4dd;
+  --color-cocoa-200: #d8c8bd;
+  --color-cocoa-300: #b39a8a;
+  --color-cocoa-400: #8a6f5f;
   --color-cocoa-500: #6b4a3a;
+  --color-cocoa-600: #5b3e30;
   --color-cocoa-700: #4a3126;
+  --color-cocoa-800: #3c281e;
   --color-cocoa-900: #2e1e16;
 
   --color-gold-300: #e8cf8f;
@@ -116,4 +131,52 @@ body {
 
 .font-display {
   font-family: var(--font-display);
+}
+
+/* Admin tables: below the `sm` breakpoint, turn each row into a stacked card
+   with the column header shown above its value via data-label. Set by
+   <Td label="..."> through the shared admin TableWrap. Hidden headers and
+   fixed-width columns otherwise force sideways scrolling on phones. */
+@media (max-width: 639px) {
+  .table-card table {
+    display: block;
+    width: 100%;
+  }
+  .table-card thead {
+    display: none;
+  }
+  .table-card tbody {
+    display: block;
+  }
+  .table-card tr {
+    display: block;
+    border: 1px solid var(--color-wine-100);
+    border-radius: 1rem;
+    padding: 0.25rem 0.9rem 0.6rem;
+    margin-bottom: 0.75rem;
+    background: #fff;
+  }
+  .table-card tr:hover {
+    background: #fff;
+  }
+  .table-card td {
+    display: block;
+    border: none !important;
+    padding: 0.4rem 0 !important;
+    min-width: 0 !important;
+    width: auto !important;
+  }
+  .table-card td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-cocoa-400);
+    margin-bottom: 2px;
+  }
+  .table-card td.max-w-md {
+    max-width: 100% !important;
+  }
 }

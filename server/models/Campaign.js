@@ -43,3 +43,4 @@ const campaignSchema = new mongoose.Schema(
 campaignSchema.index({ status: 1, updatedAt: -1 });
 
 export default mongoose.model("Campaign", campaignSchema);
+

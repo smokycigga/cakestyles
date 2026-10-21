@@ -36,3 +36,4 @@ export const serve = async (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   res.send(media.data);
 };
+

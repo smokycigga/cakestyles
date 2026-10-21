@@ -8,6 +8,7 @@ import { productImage } from "../lib/productImage";
 import { useCart } from "../store/CartContext";
 import { useFulfilment } from "../store/FulfilmentContext";
 import SlotPicker from "../components/public/SlotPicker";
+import { Placeholder } from "../components/public/ProductCard";
 
 export default function ProductDetail() {
   const { slug } = useParams();
@@ -44,6 +45,7 @@ export default function ProductDetail() {
   const selectedAddOns = useMemo(() => product?.addOns?.filter((addOn) => addOns.includes(addOn.name)) || [], [addOns, product]);
   const addOnTotal = selectedAddOns.reduce((sum, addOn) => sum + addOn.price, 0);
   const lineTotal = (unitPrice + addOnTotal) * quantity;
+  const image = productImage(product);
 
   if (loading) return <div className="mx-auto max-w-xl px-4 py-8"><div className="aspect-square animate-pulse rounded-3xl bg-wine-50" /><div className="mt-5 h-8 w-2/3 animate-pulse rounded bg-wine-50" /></div>;
   if (!product) return <div className="mx-auto max-w-xl px-4 py-20 text-center"><p className="text-cocoa-500">{loaded.error}</p><Link to="/menu" className="mt-5 inline-block rounded-full bg-wine-700 px-5 py-2.5 text-sm font-semibold text-white">Back to menu</Link></div>;
@@ -70,7 +72,7 @@ export default function ProductDetail() {
       productId: product._id,
       slug: product.slug,
       name: product.name,
-      image: productImage(product),
+      image,
       variantName: variant,
       unitPrice,
       quantity,
@@ -89,7 +91,11 @@ export default function ProductDetail() {
         <Link to="/cart" className="rounded-full border border-wine-100 bg-white p-2.5 text-wine-700" aria-label="Cart"><ShoppingCart className="h-5 w-5" /></Link>
       </div>
 
-      <img src={productImage(product)} alt={product.name} className="aspect-square w-full rounded-3xl object-cover shadow-xl shadow-wine-900/10" />
+      {image ? (
+        <img src={image} alt={product.name} className="aspect-square w-full rounded-3xl object-cover shadow-xl shadow-wine-900/10" />
+      ) : (
+        <Placeholder name={product.name} className="aspect-square w-full rounded-3xl shadow-xl shadow-wine-900/10" />
+      )}
 
       <div className="mt-5 border-b border-wine-100 pb-5">
         <div className="flex items-start justify-between gap-4">

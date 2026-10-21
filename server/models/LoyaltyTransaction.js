@@ -35,3 +35,4 @@ loyaltyTransactionSchema.index(
 );
 
 export default mongoose.model("LoyaltyTransaction", loyaltyTransactionSchema);
+

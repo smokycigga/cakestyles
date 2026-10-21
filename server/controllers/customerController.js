@@ -40,35 +40,49 @@ export const list = [protect, requirePerm("customers:read"), async (req, res) =>
 
   const customers = await Customer.find(filter).sort({ updatedAt: -1 }).limit(500).lean();
 
-  // Enrich with live metrics (order count, value, last order, outstanding).
+  // Orders are the single source of truth for a customer's money. Lifetime value
+  // is everything they have been billed across their orders, and outstanding is
+  // what they still owe on those orders — so the two can never disagree (an
+  // outstanding balance can never exceed lifetime value). Standalone invoices
+  // raised outside an order no longer count as customer "outstanding": they were
+  // the source of the "outstanding ₹X but only ₹Y lifetime" anomaly, since the
+  // two figures used to come from two different documents.
   const ids = customers.map((c) => c._id);
-  const [orderAgg, invoiceAgg] = await Promise.all([
-    Order.aggregate([
-      { $match: { customer: { $in: ids }, status: { $nin: ["cancelled", "refunded"] } } },
-      { $group: { _id: "$customer", orderCount: { $sum: 1 }, lifetimeValue: { $sum: "$grandTotal" }, lastOrderAt: { $max: "$createdAt" } } },
-    ]),
-    Invoice.aggregate([
-      { $match: { customer: { $in: ids }, status: { $nin: ["cancelled", "draft"] } } },
-      { $group: { _id: "$customer", outstanding: { $sum: "$balanceDue" } } },
-    ]),
+  const orderAgg = await Order.aggregate([
+    { $match: { customer: { $in: ids }, status: { $nin: ["cancelled", "refunded"] } } },
+    {
+      $group: {
+        _id: "$customer",
+        orderCount: { $sum: 1 },
+        lifetimeValue: { $sum: "$grandTotal" },
+        outstanding: {
+          $sum: {
+            $max: [0, { $subtract: ["$grandTotal", { $ifNull: ["$amountPaid", 0] }] }],
+          },
+        },
+        lastOrderAt: { $max: "$createdAt" },
+      },
+    },
   ]);
-
-  const metrics = new Map();
-  for (const row of orderAgg) metrics.set(String(row._id), row);
-  for (const row of invoiceAgg) {
-    const m = metrics.get(String(row._id)) || {};
-    m.outstanding = row.outstanding;
-    metrics.set(String(row._id), { ...m, ...row });
-  }
-
+  // A standalone invoice (no linked order) bills money that no order records,
+  // so it has to count toward a customer's lifetime value and outstanding too.
+  // Linked invoices restate their order's totals, so they are deliberately not
+  // added on top — otherwise one order would be counted twice.
+  const invoiceAgg = await Invoice.aggregate([
+    { $match: { customer: { $in: ids }, order: null, status: { $nin: ["draft", "cancelled"] } } },
+    { $group: { _id: "$customer", invoiceLifetime: { $sum: "$total" }, invoiceOutstanding: { $sum: "$balanceDue" } } },
+  ]);
+  const metrics = new Map(orderAgg.map((row) => [String(row._id), row]));
+  const invoiceMetrics = new Map(invoiceAgg.map((row) => [String(row._id), row]));
   const enriched = customers.map((c) => {
     const m = metrics.get(String(c._id)) || {};
+    const inv = invoiceMetrics.get(String(c._id)) || {};
     return {
       ...c,
       orderCount: m.orderCount || 0,
-      lifetimeValue: round2(m.lifetimeValue || 0),
+      lifetimeValue: round2((m.lifetimeValue || 0) + (inv.invoiceLifetime || 0)),
       lastOrderAt: m.lastOrderAt || null,
-      outstanding: round2(m.outstanding || 0),
+      outstanding: round2((m.outstanding || 0) + (inv.invoiceOutstanding || 0)),
     };
   });
 
@@ -81,7 +95,7 @@ export const getOne = [protect, requirePerm("customers:read"), async (req, res) 
 
   const [orders, invoices, enquiries, activities, tasks, loyaltyTransactions] = await Promise.all([
     Order.find({ customer: customer._id }).sort({ createdAt: -1 }).select("orderNumber status source grandTotal amountPaid payment.status fulfilment createdAt"),
-    Invoice.find({ customer: customer._id }).sort({ createdAt: -1 }).select("invoiceNumber status total amountPaid balanceDue dueDate createdAt"),
+    Invoice.find({ customer: customer._id }).sort({ createdAt: -1 }).select("invoiceNumber status total amountPaid balanceDue dueDate createdAt order"),
     Enquiry.find({ customer: customer._id }).sort({ createdAt: -1 }).select("status eventDate quotedAmount convertedOrder createdAt"),
     Activity.find({ customer: customer._id }).populate("actor", "name").sort({ occurredAt: -1 }),
     Task.find({ customer: customer._id }).populate("assignedTo", "name").sort({ dueAt: -1 }),
@@ -100,9 +114,17 @@ export const getOne = [protect, requirePerm("customers:read"), async (req, res) 
   ].sort((a, b) => new Date(b.at) - new Date(a.at));
 
   const validOrders = orders.filter((o) => !["cancelled", "refunded"].includes(o.status));
-  const lifetimeValue = round2(validOrders.reduce((s, o) => s + o.grandTotal, 0));
+  // Standalone invoices (no linked order) add money no order records. Linked
+  // invoices restate their order, so they are excluded to avoid double counting.
+  const validInvoices = invoices.filter((inv) => !inv.order && !["draft", "cancelled"].includes(inv.status));
+  const invoiceLifetime = round2(validInvoices.reduce((s, inv) => s + (inv.total || 0), 0));
+  const invoiceOutstanding = round2(validInvoices.reduce((s, inv) => s + Math.max(0, inv.balanceDue || 0), 0));
+  // Same source of truth as the list view: lifetime value and outstanding both
+  // come from orders plus standalone invoices, so outstanding can never exceed
+  // lifetime.
+  const lifetimeValue = round2(validOrders.reduce((s, o) => s + (o.grandTotal || 0), 0) + invoiceLifetime);
   const outstanding = round2(
-    invoices.filter((i) => !["cancelled", "draft", "paid"].includes(i.status)).reduce((s, i) => s + i.balanceDue, 0)
+    validOrders.reduce((s, o) => s + Math.max(0, (o.grandTotal || 0) - (o.amountPaid || 0)), 0) + invoiceOutstanding
   );
 
   res.json({
@@ -158,7 +180,12 @@ export const exportCsv = [protect, requirePerm("customers:read"), async (req, re
     { $match: { customer: { $in: ids }, status: { $nin: ["cancelled", "refunded"] } } },
     { $group: { _id: "$customer", orderCount: { $sum: 1 }, lifetimeValue: { $sum: "$grandTotal" }, lastOrderAt: { $max: "$createdAt" } } },
   ]);
+  const invoiceAgg = await Invoice.aggregate([
+    { $match: { customer: { $in: ids }, order: null, status: { $nin: ["draft", "cancelled"] } } },
+    { $group: { _id: "$customer", invoiceLifetime: { $sum: "$total" } } },
+  ]);
   const metrics = new Map(orderAgg.map((r) => [String(r._id), r]));
+  const invoiceMetrics = new Map(invoiceAgg.map((r) => [String(r._id), r]));
 
   sendCSV(res, "cakestyles-customers.csv", customers, [
     { label: "name", key: "name" },
@@ -168,10 +195,11 @@ export const exportCsv = [protect, requirePerm("customers:read"), async (req, re
     { label: "leadSource", key: "leadSource" },
     { label: "marketingConsent", get: (c) => (c.marketingConsent ? "yes" : "no") },
     { label: "totalOrders", get: (c) => metrics.get(String(c._id))?.orderCount || 0 },
-    { label: "lifetimeValue", get: (c) => metrics.get(String(c._id))?.lifetimeValue || 0 },
+    { label: "lifetimeValue", get: (c) => round2((metrics.get(String(c._id))?.lifetimeValue || 0) + (invoiceMetrics.get(String(c._id))?.invoiceLifetime || 0)) },
     { label: "lastOrderDate", get: (c) => (metrics.get(String(c._id))?.lastOrderAt || "").toString().slice(0, 10) },
     { label: "loyaltyPoints", get: (c) => c.pointsBalance || 0 },
     { label: "loyaltyTier", get: (c) => c.tier || "bronze" },
     { label: "createdAt", get: (c) => c.createdAt.toISOString().slice(0, 10) },
   ]);
 }];
+

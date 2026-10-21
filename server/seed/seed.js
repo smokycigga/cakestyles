@@ -37,15 +37,30 @@ const wipe = async () => {
   ]);
 };
 
+// The demo owner password is a convenience for a throwaway local database and
+// a liability anywhere else: MONGO_URI in this repo points at the live Atlas
+// cluster, so a seed run there would hand the owner account a password that is
+// written down in source. Production must supply its own.
+const ownerPassword = () => {
+  const configured = process.env.OWNER_PASSWORD;
+  if (configured) return configured;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("Refusing to seed: set OWNER_PASSWORD before touching a production database");
+  }
+  return "Cakestyles@123";
+};
+
 const seed = async () => {
   await connectDB();
   await wipe();
+
+  const password = ownerPassword();
 
   // --- Users -------------------------------------------------------------
   const owner = await User.create({
     name: "Cakestyles Owner",
     email: (process.env.OWNER_EMAIL || "owner@cakestyles.test").toLowerCase(),
-    passwordHash: await bcrypt.hash(process.env.OWNER_PASSWORD || "Cakestyles@123", 10),
+    passwordHash: await bcrypt.hash(password, 10),
     role: "owner",
   });
   console.log(`✅ Owner: ${owner.email}`);
@@ -90,48 +105,56 @@ const seed = async () => {
       shortDescription: "Chocolate truffle bento cake filled with crunch and made with most delicious chocolate ... read more",
       description: "Chocolate truffle bento cake filled with crunch and made with most delicious chocolate ... read more",
       basePrice: 400, prepTimeHours: 24, tags: ["bestseller"],
+      images: ["/images/menu-items/chocolate-mousse-bento.png"],
     }),
     p({
       name: "Black Forest Cake [500 g]", category: cat("Cakes"), sku: "CAKE-BF-500",
       shortDescription: "[veg preparation] Classic Black Forest cake layered with fresh cream, juicy cherries and ... read more",
       description: "[veg preparation] Classic Black Forest cake layered with fresh cream, juicy cherries and ... read more",
       basePrice: 549, prepTimeHours: 24, tags: ["veg"],
+      images: ["/images/menu-items/black-forest.png"],
     }),
     p({
       name: "Chocolate Mousse Cake [500 g]", category: cat("Cakes"), sku: "CAKE-MOUSS-500",
       shortDescription: "[veg preparation] Delicate chocolate sponge layered with creamy chocolate mousse topped with mini ... read more",
       description: "[veg preparation] Delicate chocolate sponge layered with creamy chocolate mousse topped with mini ... read more",
       basePrice: 589, prepTimeHours: 24, tags: ["veg"],
+      images: ["/images/menu-items/chocolate-mousse-bento.png"],
     }),
     p({
       name: "Chocolate Truffle Cake [500gms]", category: cat("Cakes"), sku: "CAKE-TRUF-500",
       shortDescription: "[veg preparation] An indulgent chocolate cake smeared with chocolate fudge and filled with ... read more",
       description: "[veg preparation] An indulgent chocolate cake smeared with chocolate fudge and filled with ... read more",
       basePrice: 625, prepTimeHours: 24, featured: true, tags: ["bestseller", "veg"],
+      images: ["/images/products/chocolate.webp"],
     }),
     p({
       name: "Ferreiro Rocher Cake [500gms]", category: cat("Cakes"), sku: "CAKE-FRER-500",
       shortDescription: "[Veg preparation] Moist chocolate sponge, creamy chocolate mousse loaded with a lot of ... read more",
       description: "[Veg preparation] Moist chocolate sponge, creamy chocolate mousse loaded with a lot of ... read more",
       basePrice: 700, prepTimeHours: 24, featured: true, tags: ["veg"],
+      images: ["/images/menu-items/forerro_rocher.png"],
     }),
     p({
       name: "Chocolate Mousse Bento Cake [250 g]", category: cat("Cakes"), sku: "CAKE-BENTO-MOUSS-250",
       shortDescription: "[Veg preparation] Small cake for big celebrations. Soft chocolate sponge layered with creamy ... read more",
       description: "[Veg preparation] Small cake for big celebrations. Soft chocolate sponge layered with creamy ... read more",
       basePrice: 380, prepTimeHours: 24, tags: ["veg"],
+      images: ["/images/menu-items/chocolate-mousse-bento.png"],
     }),
     p({
       name: "Choco Vanilla Bento Cake [250 g]", category: cat("Cakes"), sku: "CAKE-BENTO-CHVA-250",
       shortDescription: "Soft chocolaty sponge layered with vanilla cream and filled with dark and white ... read more",
       description: "Soft chocolaty sponge layered with vanilla cream and filled with dark and white ... read more",
       basePrice: 360, prepTimeHours: 24,
+      images: ["/images/menu-items/choco-vanilla-bento.png"],
     }),
     p({
       name: "Biscoff Bento Cake", category: cat("Cakes"), sku: "CAKE-BENTO-BISC-250",
       shortDescription: "Soft vanilla sponge layered with biscoff spread and cream and topped with more ... read more",
       description: "Soft vanilla sponge layered with biscoff spread and cream and topped with more ... read more",
       basePrice: 400, prepTimeHours: 24, featured: true, tags: ["bestseller"],
+      images: ["/images/menu-items/biscoff_pastry.png"],
     }),
     // ---- Pastries ----
     p({
@@ -139,18 +162,21 @@ const seed = async () => {
       shortDescription: "Soft sponge layered with delicious butterscotch cream and crispy caramelised nuts in between.",
       description: "Soft sponge layered with delicious butterscotch cream and crispy caramelised nuts in between.",
       basePrice: 80,
+      images: ["/images/menu-items/butterscotch.png"],
     }),
     p({
       name: "Biscoff Pastry", category: cat("Pastries"), sku: "PAST-BISC",
       shortDescription: "Soft velvety sponge layered with yummy biscoff cream and topped with more biscoff ... read more",
       description: "Soft velvety sponge layered with yummy biscoff cream and topped with more biscoff ... read more",
       basePrice: 110, tags: ["bestseller"],
+      images: ["/images/menu-items/biscoff_pastry.png"],
     }),
     p({
       name: "Truffle Pastry", category: cat("Pastries"), sku: "PAST-TRUF",
       shortDescription: "[Veg preparation] Soft chocolate sponge layered with fudgy dark chocolate and crunch caramel.",
       description: "[Veg preparation] Soft chocolate sponge layered with fudgy dark chocolate and crunch caramel.",
       basePrice: 120, tags: ["veg"],
+      images: ["/images/products/chocolate.webp"],
     }),
     // ---- Brownies ----
     p({
@@ -158,30 +184,35 @@ const seed = async () => {
       shortDescription: "Super fudgy, intensely chocolatey. Made for serious brownie fans.",
       description: "Super fudgy, intensely chocolatey. Made for serious brownie fans.",
       basePrice: 100, tags: ["bestseller"],
+      images: ["/images/menu-items/fudge_brownie.png"],
     }),
     p({
       name: "Biscoff Brownie", category: cat("Brownies"), sku: "BRWN-BISC",
       shortDescription: "All the gooey richness of fudge brownies, topped with creamy biscoff spread for ... read more",
       description: "All the gooey richness of fudge brownies, topped with creamy biscoff spread for ... read more",
       basePrice: 120,
+      images: ["/images/menu-items/biscoff_brownie.png"],
     }),
     p({
       name: "Nutella Brownie", category: cat("Brownies"), sku: "BRWN-NUTE",
       shortDescription: "A fudgy chocolate base swirled with Nutella for a double dose of indulgence.",
       description: "A fudgy chocolate base swirled with Nutella for a double dose of indulgence.",
       basePrice: 120,
+      images: ["/images/menu-items/nutella_brownie.png"],
     }),
     p({
       name: "Assorted 4 brownies", category: cat("Brownies"), sku: "BRWN-ASS4",
       shortDescription: "[Veg preparation] 1 Biscoff brownie, 1 Nutella brownie and 2 fudge brownies.",
       description: "[Veg preparation] 1 Biscoff brownie, 1 Nutella brownie and 2 fudge brownies.",
       basePrice: 400, tags: ["veg"],
+      images: ["/images/menu-items/assorted_4.png"],
     }),
     p({
       name: "Assortment of 6 brownies", category: cat("Brownies"), sku: "BRWN-ASS6",
       shortDescription: "[Veg preparation] you get to taste all our delicious brownies. 2 Fudge, 2 ... read more",
       description: "[Veg preparation] you get to taste all our delicious brownies. 2 Fudge, 2 ... read more",
       basePrice: 580, tags: ["veg"],
+      images: ["/images/menu-items/assortment_6_brownies.png"],
     }),
     // ---- Cheesecake Pastries ----
     p({
@@ -189,18 +220,21 @@ const seed = async () => {
       shortDescription: "Silky cream cheese, paired with a smooth biscuit base and topped with a ... read more",
       description: "Silky cream cheese, paired with a smooth biscuit base and topped with a ... read more",
       basePrice: 180,
+      images: ["/images/menu-items/blueberry_cheesecake.png"],
     }),
     p({
       name: "Biscoff Cheesecake Slice", category: cat("Cheesecake Pastries"), sku: "CHEE-BISC",
       shortDescription: "A melt in your mouth delight. Soft and creamy mascarpone cheese sits atop ... read more",
       description: "A melt in your mouth delight. Soft and creamy mascarpone cheese sits atop ... read more",
       basePrice: 190,
+      images: ["/images/menu-items/biscoff_cheesecake_slice.png"],
     }),
     p({
       name: "Nutella Cheesecake Slice", category: cat("Cheesecake Pastries"), sku: "CHEE-NUTE",
       shortDescription: "[veg preparation] Hazelnut heaven in every bite. A rich mascarpone cheese layer blends ... read more",
       description: "[veg preparation] Hazelnut heaven in every bite. A rich mascarpone cheese layer blends ... read more",
       basePrice: 190, tags: ["veg"],
+      images: ["/images/menu-items/nutella_cheesecake_slice.png"],
     }),
     // ---- Tubs ----
     p({
@@ -208,6 +242,7 @@ const seed = async () => {
       shortDescription: "[Veg preparation] [Non alcoholic] Our inhouse lady fingers soaked in coffee and layered ... read more",
       description: "[Veg preparation] [Non alcoholic] Our inhouse lady fingers soaked in coffee and layered ... read more",
       basePrice: 250, featured: true, tags: ["veg", "bestseller"],
+      images: ["/images/menu-items/tiramisu_tub.png"],
     }),
     // ---- Cookies ----
     p({
@@ -215,6 +250,7 @@ const seed = async () => {
       shortDescription: "Our super delicious gooey chocolate chip cookies with a soft center. Tastes best ... read more",
       description: "Our super delicious gooey chocolate chip cookies with a soft center. Tastes best ... read more",
       basePrice: 50,
+      images: ["/images/menu-items/chocolate_chip_cookie.png"],
     }),
     // ---- Buns ----
     p({
@@ -222,6 +258,7 @@ const seed = async () => {
       shortDescription: "Delectable cream cheese filled bun. The perfect tangy, creamy, cheesy and sweet ... read more",
       description: "Delectable cream cheese filled bun. The perfect tangy, creamy, cheesy and sweet ... read more",
       basePrice: 110,
+      images: ["/images/menu-items/korean_bun.png"],
     }),
   ]);
 
@@ -304,6 +341,9 @@ const seed = async () => {
   });
   await Order.updateOne({ _id: orders[4]._id }, { invoice: inv1._id });
 
+  // Half up front, the remainder outstanding. Rounding both halves the same way
+  // made a 549 invoice seed as 275 + 275, so the demo data itself did not add up.
+  const inv2Paid = Math.round((orders[5].grandTotal / 2) * 100) / 100;
   const inv2 = await Invoice.create({
     invoiceNumber: await nextInvoiceNumber(),
     customer: customers[2]._id,
@@ -311,10 +351,10 @@ const seed = async () => {
     order: orders[5]._id,
     lines: orders[5].items.map((it) => ({ description: it.name, quantity: it.quantity, unitPrice: it.unitPrice, amount: it.lineTotal })),
     subtotal: orders[5].subtotal, tax: { rate: 0, label: "Tax", amount: 0 },
-    total: orders[5].grandTotal, amountPaid: Math.round(orders[5].grandTotal / 2),
-    balanceDue: Math.round(orders[5].grandTotal / 2),
+    total: orders[5].grandTotal, amountPaid: inv2Paid,
+    balanceDue: Math.round((orders[5].grandTotal - inv2Paid) * 100) / 100,
     dueDate: daysAgo(10), status: "overdue",
-    payments: [{ amount: Math.round(orders[5].grandTotal / 2), method: "upi", date: new Date(Date.now() - 20 * 86400000), recordedBy: { name: "seed" } }],
+    payments: [{ amount: inv2Paid, method: "upi", date: new Date(Date.now() - 20 * 86400000), recordedBy: { name: "seed" } }],
   });
   await Order.updateOne({ _id: orders[5]._id }, { invoice: inv2._id });
 
@@ -372,7 +412,7 @@ const seed = async () => {
 
   console.log("✅ Seed complete:");
   console.log(`   ${categories.length} categories, ${products.length} products, ${customers.length + 1} customers, ${orders.length} orders, 3 invoices, ${expenses.length} expenses, 3 enquiries`);
-  console.log(`   Login: ${owner.email} / ${process.env.OWNER_PASSWORD || "Cakestyles@123"}`);
+  console.log(`   Login: ${owner.email} / ${process.env.OWNER_PASSWORD ? "OWNER_PASSWORD" : "Cakestyles@123 (demo default)"}`);
 
   await mongoose.disconnect();
 };
@@ -381,3 +421,4 @@ seed().catch((err) => {
   console.error("Seed failed:", err);
   process.exit(1);
 });
+

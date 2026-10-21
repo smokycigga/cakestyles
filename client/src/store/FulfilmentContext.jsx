@@ -25,6 +25,9 @@ const emptyAddress = () => ({
   line2: "",
   city: "",
   pincode: "",
+  latitude: null,
+  longitude: null,
+  distanceKm: 0,
 });
 
 const defaultFulfilment = () => {
@@ -56,6 +59,9 @@ const normaliseFulfilment = (value) => {
       line2: cleanString(address.line2),
       city: cleanString(address.city),
       pincode: cleanString(address.pincode),
+      latitude: Number.isFinite(Number(address.latitude)) ? Number(address.latitude) : null,
+      longitude: Number.isFinite(Number(address.longitude)) ? Number(address.longitude) : null,
+      distanceKm: Math.max(0, Number(address.distanceKm) || 0),
     },
     confirmed: source.confirmed === true,
   };
@@ -146,7 +152,12 @@ export function FulfilmentProvider({ children }) {
     if (!Object.hasOwn(emptyAddress(), field)) return;
     setFulfilmentState((current) => ({
       ...current,
-      address: { ...current.address, [field]: cleanString(value) },
+      address: {
+        ...current.address,
+        [field]: ["latitude", "longitude", "distanceKm"].includes(field)
+          ? (Number.isFinite(Number(value)) ? Number(value) : null)
+          : cleanString(value),
+      },
     }));
   }, []);
 

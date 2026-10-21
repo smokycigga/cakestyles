@@ -4,7 +4,11 @@ import { ArrowLeft, Plus, Trash2, X, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { errMsg } from "../../lib/api";
 import { compressImage } from "../../lib/imageCompress";
-import { PageHeader, Button, Field, inputCls } from "../../components/admin/ui";
+import { PageHeader, Button, Field, Modal, inputCls } from "../../components/admin/ui";
+
+// Sentinel for the "create one now" entry in the category select. It never
+// reaches form.category — choosing it opens the modal instead.
+const NEW_CATEGORY = "__new__";
 
 const EMPTY = {
   name: "",
@@ -23,6 +27,7 @@ const EMPTY = {
   prepTimeHours: 24,
   taxRate: "",
   costPrice: "",
+  b2bPrice: "",
   internalNotes: "",
   status: "draft",
   publishAt: "",
@@ -37,8 +42,11 @@ export default function ProductForm() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [tagInput, setTagInput] = useState("");
-  const [variantDraft, setVariantDraft] = useState({ name: "", price: "" });
+  const [variantDraft, setVariantDraft] = useState({ name: "", price: "", b2bPrice: "" });
   const [addOnDraft, setAddOnDraft] = useState({ name: "", price: "" });
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [newCategory, setNewCategory] = useState({ name: "", description: "", image: "" });
 
   useEffect(() => {
     api.get("/categories?all=1").then((r) => setCategories(r.data.categories));
@@ -52,6 +60,7 @@ export default function ProductForm() {
           basePrice: String(p.basePrice),
           taxRate: p.taxRate == null ? "" : String(p.taxRate),
           costPrice: p.costPrice == null ? "" : String(p.costPrice),
+          b2bPrice: p.b2bPrice == null ? "" : String(p.b2bPrice),
           prepTimeHours: p.prepTimeHours ?? 24,
           publishAt: p.publishAt ? String(p.publishAt).slice(0, 10) : "",
         });
@@ -62,6 +71,33 @@ export default function ProductForm() {
   const set = (k) => (e) => {
     const v = e?.target ? (e.target.type === "checkbox" ? e.target.checked : e.target.value) : e;
     setForm((f) => ({ ...f, [k]: v }));
+  };
+
+  // A store with no categories yet had no way forward from this screen: the
+  // select was empty and Category is required, so the product could never be
+  // saved. Choosing "Add new category…" creates one here and selects it.
+  const onCategoryChange = (e) => {
+    if (e.target.value !== NEW_CATEGORY) {
+      return setForm((f) => ({ ...f, category: e.target.value }));
+    }
+    setNewCategory({ name: "", description: "", image: "" });
+    setCategoryOpen(true);
+  };
+
+  const createCategory = async (e) => {
+    e.preventDefault();
+    setCreatingCategory(true);
+    try {
+      const { data } = await api.post("/categories", newCategory);
+      setCategories((list) => [...list, data.category]);
+      setForm((f) => ({ ...f, category: data.category._id }));
+      toast.success(`Category "${data.category.name}" added`);
+      setCategoryOpen(false);
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setCreatingCategory(false);
+    }
   };
 
   const uploadImage = async (file) => {
@@ -95,7 +131,7 @@ export default function ProductForm() {
       description: form.description,
       images: form.images,
       basePrice: Number(form.basePrice),
-      variants: form.variants.map((v) => ({ name: v.name, price: Number(v.price) })),
+      variants: form.variants.map((v) => ({ name: v.name, price: Number(v.price), b2bPrice: v.b2bPrice === "" || v.b2bPrice == null ? null : Number(v.b2bPrice) })),
       addOns: form.addOns.map((a) => ({ name: a.name, price: Number(a.price) })),
       availability: form.availability,
       orderability: form.orderability,
@@ -104,6 +140,7 @@ export default function ProductForm() {
       prepTimeHours: Number(form.prepTimeHours) || 0,
       taxRate: form.taxRate === "" ? null : Number(form.taxRate),
       costPrice: form.costPrice === "" ? null : Number(form.costPrice),
+      b2bPrice: form.b2bPrice === "" ? null : Number(form.b2bPrice),
       internalNotes: form.internalNotes,
       status: form.status,
       publishAt: form.status === "scheduled" && form.publishAt ? new Date(form.publishAt).toISOString() : null,
@@ -142,12 +179,13 @@ export default function ProductForm() {
           <Field label="SKU / internal code">
             <input value={form.sku} onChange={set("sku")} className={inputCls} />
           </Field>
-          <Field label="Category *">
-            <select value={form.category} onChange={set("category")} className={inputCls} required>
+          <Field label="Category *" hint={categories.length === 0 ? "No categories yet — choose “＋ Add new category…” below to make your first one." : "Renaming, hiding and reordering categories happens under Menu."}>
+            <select value={form.category} onChange={onCategoryChange} className={inputCls} required>
               <option value="">Select category…</option>
               {categories.map((c) => (
                 <option key={c._id} value={c._id}>{c.name}</option>
               ))}
+              <option value={NEW_CATEGORY}>＋ Add new category…</option>
             </select>
           </Field>
           <Field label="Base price (₹) *">
@@ -201,6 +239,9 @@ export default function ProductForm() {
                 <div key={i} className="flex items-center gap-2 text-sm">
                   <span className="flex-1 bg-cream-50 rounded-lg px-3 py-1.5">{v.name}</span>
                   <span className="w-20 bg-cream-50 rounded-lg px-3 py-1.5">₹{v.price}</span>
+                  {v.b2bPrice != null && v.b2bPrice !== "" && (
+                    <span className="w-24 bg-indigo-50 rounded-lg px-3 py-1.5 text-indigo-700" title="B2B wholesale price">B2B ₹{v.b2bPrice}</span>
+                  )}
                   <button type="button" onClick={() => setForm((f) => ({ ...f, variants: f.variants.filter((_, idx) => idx !== i) }))} className="p-1 text-cocoa-400 hover:text-rose-600">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -209,14 +250,15 @@ export default function ProductForm() {
             </div>
             <div className="flex gap-2">
               <input placeholder="e.g. 1 kg" value={variantDraft.name} onChange={(e) => setVariantDraft({ ...variantDraft, name: e.target.value })} className={inputCls} />
-              <input placeholder="₹" type="number" min="0" value={variantDraft.price} onChange={(e) => setVariantDraft({ ...variantDraft, price: e.target.value })} className={`${inputCls} w-24`} />
+              <input placeholder="₹ Retail" type="number" min="0" value={variantDraft.price} onChange={(e) => setVariantDraft({ ...variantDraft, price: e.target.value })} className={`${inputCls} w-24`} />
+              <input placeholder="₹ B2B" type="number" min="0" value={variantDraft.b2bPrice} onChange={(e) => setVariantDraft({ ...variantDraft, b2bPrice: e.target.value })} className={`${inputCls} w-24`} title="B2B wholesale price (optional)" />
               <Button
                 type="button"
                 variant="outline"
                 onClick={() => {
                   if (!variantDraft.name || variantDraft.price === "") return;
-                  setForm((f) => ({ ...f, variants: [...f.variants, { name: variantDraft.name, price: variantDraft.price }] }));
-                  setVariantDraft({ name: "", price: "" });
+                  setForm((f) => ({ ...f, variants: [...f.variants, { name: variantDraft.name, price: variantDraft.price, b2bPrice: variantDraft.b2bPrice || "" }] }));
+                  setVariantDraft({ name: "", price: "", b2bPrice: "" });
                 }}
               >
                 <Plus className="w-4 h-4" />
@@ -292,6 +334,9 @@ export default function ProductForm() {
           <Field label="Cost price ₹ (optional, for margin)">
             <input type="number" min="0" step="0.01" value={form.costPrice} onChange={set("costPrice")} className={inputCls} />
           </Field>
+          <Field label="B2B price ₹ (wholesale)" hint="Internal only — never shown to customers">
+            <input type="number" min="0" step="0.01" value={form.b2bPrice} onChange={set("b2bPrice")} className={inputCls} />
+          </Field>
           <div className="flex items-end pb-1.5">
             <label className="flex items-center gap-2 text-sm text-cocoa-700 cursor-pointer">
               <input type="checkbox" checked={form.featured} onChange={set("featured")} className="accent-wine-600 w-4 h-4" />
@@ -349,6 +394,38 @@ export default function ProductForm() {
           <Link to="/admin/products" className="text-sm text-cocoa-400 hover:text-wine-700">Cancel</Link>
         </div>
       </form>
+
+      <Modal open={categoryOpen} onClose={() => setCategoryOpen(false)} title="New category">
+        <form onSubmit={createCategory} className="space-y-4">
+          <Field label="Name *">
+            <input
+              value={newCategory.name}
+              onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
+              className={inputCls}
+              required
+              autoFocus
+            />
+          </Field>
+          <Field label="Description" hint="One line, shown under the category heading">
+            <input
+              value={newCategory.description}
+              onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })}
+              className={inputCls}
+            />
+          </Field>
+          <Field label="Image URL" hint="Optional — a /images/… path or any public image link">
+            <input
+              value={newCategory.image}
+              onChange={(e) => setNewCategory({ ...newCategory, image: e.target.value })}
+              placeholder="/images/menu-items/…"
+              className={inputCls}
+            />
+          </Field>
+          <Button type="submit" disabled={creatingCategory} className="w-full">
+            {creatingCategory && <Loader2 className="w-4 h-4 animate-spin" />} Add category & select it
+          </Button>
+        </form>
+      </Modal>
     </div>
   );
 }

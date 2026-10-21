@@ -5,9 +5,11 @@ import toast from "react-hot-toast";
 import api, { errMsg } from "../../lib/api";
 import { inr, daysFromNow } from "../../lib/format";
 import { SOURCE_LABELS, PAYMENT_METHOD_LABELS } from "../../lib/meta";
+import { orderTotalsPreview } from "../../lib/invoiceTotals";
 import { PageHeader, Button, Field, inputCls, Badge } from "../../components/admin/ui";
+import { useSettings } from "../../store/SettingsContext";
 
-const MANUAL_SOURCES = ["instagram", "whatsapp", "phone", "walk_in", "repeat", "other"];
+const MANUAL_SOURCES = ["instagram", "whatsapp", "phone", "walk_in", "repeat", "bni", "jbn", "other"];
 
 export default function ManualOrder() {
   const navigate = useNavigate();
@@ -20,12 +22,18 @@ export default function ManualOrder() {
   const [customerSearch, setCustomerSearch] = useState("");
 
   const [source, setSource] = useState("instagram");
-  const [lines, setLines] = useState([]); // {productId?, name, variantName, unitPrice, quantity, isCustom, notes}
+  const [lines, setLines] = useState([]); // {productId?, name, variantName, unitPrice, quantity, isCustom, useB2bPrice?, notes}
   const [fulfilment, setFulfilment] = useState({ type: "pickup", date: daysFromNow(2), slot: "" });
   const [specialInstructions, setSpecialInstructions] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [discount, setDiscount] = useState("");
   const [deposit, setDeposit] = useState({ amount: "", method: "upi", ref: "" });
   const [submitting, setSubmitting] = useState(false);
+  // B2B (wholesale) mode: catalogue items are priced at their internal B2B
+  // rate instead of the customer-facing price. The rates never reach the
+  // public storefront — the server strips them from public endpoints.
+  const [b2bMode, setB2bMode] = useState(false);
+  const settings = useSettings();
 
   useEffect(() => {
     api.get("/customers").then((r) => setCustomers(r.data.customers)).catch(() => {});
@@ -39,15 +47,55 @@ export default function ManualOrder() {
   }, [customers, customerSearch]);
 
 
+  // B2B pricing mirrors the server: a variant's b2bPrice wins, falling back
+  // to the product-level b2bPrice. No price configured → not a B2B item.
+  const b2bPriceOf = (p, variantName) => {
+    const variant = variantName ? (p?.variants || []).find((v) => v.name === variantName) : null;
+    if (variant && variant.b2bPrice != null) return variant.b2bPrice;
+    return p?.b2bPrice ?? null;
+  };
+
+  // Cheapest B2B rate a product can be bought at, for the picker label.
+  const b2bFromPrice = (p) => {
+    const rates = (p?.variants || []).length
+      ? p.variants.map((v) => (v.b2bPrice != null ? v.b2bPrice : p.b2bPrice)).filter((r) => r != null)
+      : [p?.b2bPrice].filter((r) => r != null);
+    return rates.length ? Math.min(...rates) : null;
+  };
+
+  const b2bProducts = products.filter(
+    (p) => p.b2bPrice != null || (p.variants || []).some((v) => v.b2bPrice != null),
+  );
+
   const addProduct = (productId) => {
     const p = products.find((x) => x._id === productId);
     if (!p) return;
+    const variantName = p.variants?.[0]?.name || "";
+    if (b2bMode) {
+      const price = b2bPriceOf(p, variantName);
+      if (price == null) return toast.error(`${p.name} has no B2B price set — add one on the product first`);
+      setLines((prev) => [
+        ...prev,
+        {
+          productId: p._id,
+          name: p.name,
+          variantName,
+          unitPrice: price,
+          variants: p.variants || [],
+          quantity: 1,
+          isCustom: false,
+          useB2bPrice: true,
+          notes: "",
+        },
+      ]);
+      return;
+    }
     setLines((prev) => [
       ...prev,
       {
         productId: p._id,
         name: p.name,
-        variantName: p.variants?.[0]?.name || "",
+        variantName,
         unitPrice: p.variants?.[0]?.price ?? p.basePrice,
         variants: p.variants || [],
         quantity: 1,
@@ -63,7 +111,18 @@ export default function ManualOrder() {
   const addCustom = () =>
     setLines((prev) => [...prev, { name: "", unitPrice: "", quantity: 1, isCustom: true, notes: "" }]);
 
-  const total = lines.reduce((s, l) => s + (Number(l.unitPrice) || 0) * (Number(l.quantity) || 0), 0);
+  const subtotal = lines.reduce((s, l) => s + (Number(l.unitPrice) || 0) * (Number(l.quantity) || 0), 0);
+
+  // Quote the figure the order will actually be stored with — staff were reading
+  // a total that excluded tax. One implementation, shared with the enquiry
+  // convert modal and pinned against the server engine by pricing.test.js.
+  const tax = settings?.tax || {};
+  const { discount: discountAmount, taxRate, taxTotal: taxAmount, grandTotal: total } = orderTotalsPreview({
+    subtotal,
+    discount: Number(discount) || 0,
+    taxRate: tax.enabled ? tax.rate : 0,
+    taxInclusive: tax.inclusive,
+  });
 
   const submit = async (e) => {
     e.preventDefault();
@@ -81,6 +140,7 @@ export default function ManualOrder() {
             variantName: l.variantName || undefined,
             quantity: Number(l.quantity),
             notes: l.notes || undefined,
+            ...(l.useB2bPrice ? { useB2bPrice: true } : {}),
           }
     );
 
@@ -99,6 +159,7 @@ export default function ManualOrder() {
             : {}),
         },
         specialInstructions: specialInstructions || undefined,
+        ...(discount ? { discount: Number(discount) } : {}),
         ...(dueDate ? { dueDate } : {}),
         ...(deposit.amount ? { deposit: { amount: Number(deposit.amount), method: deposit.method, ref: deposit.ref || undefined } } : {}),
       });
@@ -219,14 +280,30 @@ export default function ManualOrder() {
 
         {/* Items */}
         <section className="bg-white rounded-2xl border border-wine-100 p-5">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <h3 className="text-sm font-semibold text-cocoa-900">Items</h3>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
+              <label
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm cursor-pointer transition-colors ${
+                  b2bMode ? "border-indigo-500 bg-indigo-50 text-indigo-800" : "border-wine-100 text-cocoa-500"
+                }`}
+                title="Wholesale pricing — B2B rates are internal and never shown to customers"
+              >
+                <input type="checkbox" checked={b2bMode} onChange={(e) => setB2bMode(e.target.checked)} className="accent-indigo-600" />
+                B2B (wholesale)
+              </label>
               <select value="" onChange={(e) => e.target.value && addProduct(e.target.value)} className="border border-wine-100 rounded-xl px-3 py-2 text-sm bg-white">
-                <option value="">+ Catalogue product…</option>
-                {products.map((p) => (
-                  <option key={p._id} value={p._id}>{p.name} ({inr(p.basePrice)}+)</option>
+                <option value="">{b2bMode ? "+ B2B product…" : "+ Catalogue product…"}</option>
+                {(b2bMode ? b2bProducts : products).map((p) => (
+                  <option key={p._id} value={p._id}>
+                    {b2bMode
+                      ? `${p.name} (B2B ${b2bFromPrice(p) != null ? inr(b2bFromPrice(p)) : "—"}${(p.variants || []).length > 1 ? "+" : ""})`
+                      : `${p.name} (${inr(p.basePrice)}+)`}
+                  </option>
                 ))}
+                {b2bMode && b2bProducts.length === 0 && (
+                  <option value="" disabled>No products have a B2B price set</option>
+                )}
               </select>
               <Button type="button" variant="outline" onClick={addCustom}>
                 <Plus className="w-4 h-4" /> Custom item
@@ -235,7 +312,11 @@ export default function ManualOrder() {
           </div>
 
           {lines.length === 0 ? (
-            <p className="text-sm text-cocoa-400 py-4 text-center">Add catalogue products or a custom line item for bespoke cakes.</p>
+            <p className="text-sm text-cocoa-400 py-4 text-center">
+              {b2bMode
+                ? "Pick B2B products at their wholesale rate — customers never see these prices."
+                : "Add catalogue products or a custom line item for bespoke cakes."}
+            </p>
           ) : (
             <div className="space-y-2">
               {lines.map((l, i) => (
@@ -245,7 +326,14 @@ export default function ManualOrder() {
                     {l.isCustom ? (
                       <input value={l.name} onChange={(e) => updateLine(i, { name: e.target.value })} placeholder="e.g. Custom 2-tier cake" className={inputCls} />
                     ) : (
-                      <div className="text-sm font-medium text-cocoa-800 px-1 py-2">{l.name}</div>
+                      <div className="text-sm font-medium text-cocoa-800 px-1 py-2">
+                        {l.name}
+                        {l.useB2bPrice && (
+                          <span className="ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700" title="Wholesale price — not shown to customers">
+                            B2B
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                   {!l.isCustom && (l.variants || []).length > 0 && (
@@ -254,8 +342,13 @@ export default function ManualOrder() {
                       <select
                         value={l.variantName}
                         onChange={(e) => {
-                          const v = l.variants.find((x) => x.name === e.target.value);
-                          updateLine(i, { variantName: e.target.value, unitPrice: v ? v.price : l.unitPrice });
+                          if (l.useB2bPrice) {
+                            const p = products.find((x) => x._id === l.productId);
+                            updateLine(i, { variantName: e.target.value, unitPrice: b2bPriceOf(p, e.target.value) ?? l.unitPrice });
+                          } else {
+                            const v = l.variants.find((x) => x.name === e.target.value);
+                            updateLine(i, { variantName: e.target.value, unitPrice: v ? v.price : l.unitPrice });
+                          }
                         }}
                         className={inputCls}
                       >
@@ -293,9 +386,39 @@ export default function ManualOrder() {
               ))}
             </div>
           )}
-          <div className="flex justify-between items-center mt-4 pt-3 border-t border-wine-100">
-            <span className="text-sm text-cocoa-500">{lines.length} item(s)</span>
-            <span className="font-semibold text-wine-700">Order total: {inr(total)}</span>
+          <div className="mt-4 pt-3 border-t border-wine-100 space-y-1">
+            <div className="flex justify-between items-center text-sm text-cocoa-500">
+              <span>{lines.length} item(s)</span>
+              <span>Subtotal: {inr(subtotal)}</span>
+            </div>
+            {taxAmount > 0 && (
+              <div className="flex justify-between items-center text-sm text-cocoa-500">
+                <span>{tax.label || "Tax"} ({taxRate}%){tax.inclusive ? " incl." : ""}</span>
+                <span>{inr(taxAmount)}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between text-sm text-cocoa-500">
+              <span>Discount (₹)</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+                placeholder="0"
+                className="w-32 border border-wine-100 rounded-lg px-2 py-1 text-right bg-white"
+              />
+            </div>
+            {discountAmount > 0 && (
+              <div className="flex justify-between items-center text-sm text-emerald-700">
+                <span>Discount</span>
+                <span>- {inr(discountAmount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-cocoa-500">Order total</span>
+              <span className="font-semibold text-wine-700">{inr(total)}</span>
+            </div>
           </div>
         </section>
 

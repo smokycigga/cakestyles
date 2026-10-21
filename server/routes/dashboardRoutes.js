@@ -6,3 +6,4 @@ const router = express.Router();
 router.get("/", dashboard);
 
 export default router;
+

@@ -84,3 +84,4 @@ export const updateUser = [protect, requirePerm("users:manage"), validate(update
 
   res.json({ user: user.toSafeJSON() });
 }];
+

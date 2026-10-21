@@ -6,6 +6,7 @@ import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Customer from "../models/Customer.js";
 import Setting from "../models/Setting.js";
+import Invoice from "../models/Invoice.js";
 import LoyaltyTransaction from "../models/LoyaltyTransaction.js";
 import {
   ORDER_SOURCES,
@@ -18,6 +19,7 @@ import { writeAudit } from "../utils/audit.js";
 import { nextOrderNumber } from "../utils/numbers.js";
 import { computeTotals, lineTotal, sumPayments, round2, paymentStatusFor } from "../utils/pricing.js";
 import { normalizePhone } from "../utils/misc.js";
+import { syncPaymentToInvoice, cancelInvoiceForCancelledOrder } from "../utils/paymentSync.js";
 import { istDateString, startOfIstDay, istToUtc } from "../utils/dates.js";
 import { notifyOrderPlaced, notifyOrderStatus } from "../utils/notify.js";
 import {
@@ -37,6 +39,7 @@ const catalogItemSchema = z.object({
   quantity: z.number().int().min(1).max(99),
   addOns: z.array(z.string()).optional(),
   notes: z.string().max(500).optional(),
+  useB2bPrice: z.boolean().optional(),
 });
 
 const customItemSchema = z.object({
@@ -52,6 +55,9 @@ const addressSchema = z.object({
   city: z.string().min(1),
   pincode: z.string().min(1),
   notes: z.string().optional(),
+  latitude: z.number().finite().min(-90).max(90).optional(),
+  longitude: z.number().finite().min(-180).max(180).optional(),
+  distanceKm: z.number().finite().min(0).optional(),
 });
 
 const fulfilmentSchema = z.object({
@@ -62,6 +68,9 @@ const fulfilmentSchema = z.object({
 }).superRefine((fulfilment, ctx) => {
   if (fulfilment.type === "delivery" && !fulfilment.address) {
     ctx.addIssue({ code: "custom", path: ["address"], message: "Delivery address is required" });
+  }
+  if (fulfilment.type === "delivery" && fulfilment.address && (!Number.isFinite(fulfilment.address.latitude) || !Number.isFinite(fulfilment.address.longitude))) {
+    ctx.addIssue({ code: "custom", path: ["address", "latitude"], message: "Please select your delivery location on the map" });
   }
 });
 
@@ -146,6 +155,52 @@ const priceCatalogItems = async (rawItems) => {
   return rawItems.map((item) => priceCatalogItem(item, byId.get(item.productId.toLowerCase())));
 };
 
+// B2B pricing: uses b2bPrice instead of retail price. Skips
+// public availability checks since these are staff-only wholesale orders.
+const priceB2bCatalogItem = (item, product) => {
+  if (!product) throw Object.assign(new Error(`Product ${item.productId} no longer exists`), { status: 400 });
+
+  const variants = product.variants || [];
+  const variant = item.variantName
+    ? variants.find((candidate) => candidate.name === item.variantName)
+    : null;
+  if (item.variantName && !variant) {
+    throw Object.assign(new Error(`Variant "${item.variantName}" not available for ${product.name}`), { status: 400 });
+  }
+
+  // Pick the B2B price: variant b2bPrice > product b2bPrice > error
+  let unitPrice;
+  if (variant) {
+    unitPrice = variant.b2bPrice != null ? variant.b2bPrice : product.b2bPrice;
+  } else {
+    unitPrice = product.b2bPrice;
+  }
+  if (unitPrice == null) {
+    throw Object.assign(new Error(`${product.name} does not have a B2B price configured`), { status: 400 });
+  }
+
+  return {
+    product: product._id,
+    name: product.name,
+    variantName: variant?.name || "",
+    unitPrice,
+    quantity: item.quantity,
+    addOns: [],
+    lineTotal: lineTotal({ unitPrice, quantity: item.quantity, addOns: [] }),
+    isCustom: false,
+    isB2b: true,
+    notes: item.notes || "",
+  };
+};
+
+const priceB2bCatalogItems = async (rawItems) => {
+  const ids = [...new Set(rawItems.map((item) => item.productId))];
+  const products = await Product.find({ _id: { $in: ids } });
+  const byId = new Map(products.map((product) => [String(product._id).toLowerCase(), product]));
+
+  return rawItems.map((item) => priceB2bCatalogItem(item, byId.get(item.productId.toLowerCase())));
+};
+
 export const validateFulfilment = (fulfilment, settings, items, now = new Date()) => {
   const today = istDateString(now);
   if (fulfilment.date < today) {
@@ -213,23 +268,48 @@ const findOrCreateCustomer = async ({ name, phone, email, leadSource }) => {
   const normalized = normalizePhone(phone);
   let customer = await Customer.findOne({ phone: normalized });
   if (!customer) {
-    customer = await Customer.create({
-      name,
-      phone: normalized,
-      email: email || "",
-      leadSource: leadSource || "",
-    });
-  } else if (email && !customer.email) {
+    try {
+      return await Customer.create({
+        name,
+        phone: normalized,
+        email: email || "",
+        leadSource: leadSource || "",
+      });
+    } catch (err) {
+      // One customer, two tabs. Both checkouts looked the account up, both found
+      // nothing, and the loser of the insert hit the unique index on phone — a
+      // duplicate key that escaped as a 500 and lost the order. The document the
+      // winner wrote is the account both of them were asking for.
+      if (err?.code !== 11000) throw err;
+      customer = await Customer.findOne({ phone: normalized });
+      if (!customer) throw err;
+    }
+  }
+  if (email && !customer.email) {
     customer.email = email;
     await customer.save();
   }
   return customer;
 };
 
-const applyDeliveryFee = (settings, subtotal) => {
-  if (!settings.delivery.enabled || settings.delivery.fee <= 0) return 0;
-  if (settings.delivery.freeOver > 0 && subtotal >= settings.delivery.freeOver) return 0;
-  return settings.delivery.fee;
+const DELIVERY_RATE_PER_KM = 18;
+const STORE_ORIGIN = { lat: 19.076, lng: 72.8777 };
+const distanceKm = (point) => {
+  if (!Number.isFinite(point?.latitude) || !Number.isFinite(point?.longitude)) return 0;
+  const toRad = (value) => (value * Math.PI) / 180;
+  const dLat = toRad(point.latitude - STORE_ORIGIN.lat);
+  const dLng = toRad(point.longitude - STORE_ORIGIN.lng);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(STORE_ORIGIN.lat)) * Math.cos(toRad(point.latitude)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+const calculateDeliveryFee = (settings, fulfilment) => {
+  if (!settings.delivery?.enabled) return 0;
+  // Round to the same 2 dp the customer was quoted from before rounding up:
+  // ceiling the raw float charged an extra km whenever the distance shown as
+  // "7.00 km" was really 7.0000001 km.
+  const km = Math.round(distanceKm(fulfilment.address) * 100) / 100;
+  return Math.ceil(km) * DELIVERY_RATE_PER_KM;
 };
 
 export const awardLoyaltyForCompletedOrder = async (orderId, actor = {}) => {
@@ -316,10 +396,9 @@ export const checkout = [validate(checkoutSchema), async (req, res) => {
   validateFulfilment(body.fulfilment, settings, itemsWithPrep);
 
   const taxRate = settings.tax.enabled ? settings.tax.rate : 0;
-  const subtotalForFee = items.reduce((s, i) => s + i.lineTotal, 0);
   const totals = computeTotals({
     items,
-    deliveryFee: body.fulfilment.type === "delivery" ? applyDeliveryFee(settings, subtotalForFee) : 0,
+    deliveryFee: body.fulfilment.type === "delivery" ? calculateDeliveryFee(settings, body.fulfilment) : 0,
     taxRate,
     taxInclusive: settings.tax.inclusive,
   });
@@ -417,6 +496,7 @@ export const list = [protect, requirePerm("orders:read"), async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 100, 500);
   const orders = await Order.find(filter)
     .populate("customer", "name phone tags")
+    .populate("invoice", "invoiceNumber")
     .sort({ createdAt: -1 })
     .limit(limit);
 
@@ -449,6 +529,14 @@ export const updateStatus = [protect, requirePerm("orders:write"), validate(stat
   });
   await order.save();
 
+  // A cancelled order's invoice must stop chasing the customer.
+  let invoiceNote = "";
+  if (req.body.status === "cancelled") {
+    const { cancelled, needsAttention } = await cancelInvoiceForCancelledOrder(order);
+    if (cancelled) invoiceNote = ` Invoice ${cancelled} cancelled with it.`;
+    if (needsAttention) invoiceNote = ` Invoice ${needsAttention} has payments recorded and was left open — refund it manually.`;
+  }
+
   if (req.body.status === "completed") {
     const award = await awardLoyaltyForCompletedOrder(order._id, {
       userId: req.user._id,
@@ -462,11 +550,11 @@ export const updateStatus = [protect, requirePerm("orders:write"), validate(stat
 
   await writeAudit({
     req, action: "order.status", entity: "Order", entityId: order._id,
-    before, after: { status: order.status }, fields: ["status"], meta: order.orderNumber,
+    before, after: { status: order.status }, fields: ["status"], meta: order.orderNumber + invoiceNote,
   });
   await notifyOrderStatus(order, req.body.status);
 
-  res.json({ order });
+  res.json({ order, invoiceNote: invoiceNote.trim() || undefined });
 }];
 
 const paymentSchema = z.object({
@@ -506,6 +594,17 @@ export const recordPayment = [protect, requirePerm("finance:write"), validate(pa
 
   await order.save();
 
+  // Money on the order is money on its invoice. Without this the invoice kept
+  // showing the old balance and the customer was chased for what they paid.
+  await syncPaymentToInvoice(order, {
+    amount,
+    method: req.body.method,
+    ref: req.body.ref,
+    note: req.body.note,
+    date: req.body.paidAt,
+    user: req.user,
+  });
+
   await writeAudit({
     req, action: "order.payment", entity: "Order", entityId: order._id,
     meta: `${order.orderNumber}: ₹${amount} via ${req.body.method}`,
@@ -527,6 +626,7 @@ const manualOrderSchema = z.object({
   }),
   specialInstructions: z.string().max(1000).optional(),
   deposit: z.object({ amount: z.number().min(0), method: z.enum(PAYMENT_METHODS), ref: z.string().optional() }).optional(),
+  discount: z.number().min(0).optional(),
   dueDate: z.string().optional(),
 });
 
@@ -545,11 +645,13 @@ export const createManual = [protect, requirePerm("orders:write"), validate(manu
     return res.status(400).json({ message: "Select an existing customer or provide new customer details" });
   }
 
-  // Split catalogue vs custom line items; custom items bypass catalogue pricing.
-  const catalogItems = body.items.filter((i) => i.productId);
+  // Split catalogue vs B2B vs custom line items; custom items bypass catalogue pricing.
+  const catalogItems = body.items.filter((i) => i.productId && !i.useB2bPrice);
+  const b2bItems = body.items.filter((i) => i.productId && i.useB2bPrice);
   const customItems = body.items.filter((i) => !i.productId && i.name);
 
   const pricedCatalog = await priceCatalogItems(catalogItems);
+  const pricedB2b = b2bItems.length > 0 ? await priceB2bCatalogItems(b2bItems) : [];
   const pricedCustom = customItems.map((i) => ({
     name: i.name,
     variantName: "",
@@ -561,8 +663,24 @@ export const createManual = [protect, requirePerm("orders:write"), validate(manu
     notes: i.notes || "",
   }));
 
-  const items = [...pricedCatalog, ...pricedCustom];
-  const totals = computeTotals({ items });
+  const items = [...pricedCatalog, ...pricedB2b, ...pricedCustom];
+  // Staff orders are the same records as website orders, so they carry the same
+  // tax. Omitting it billed walk-in customers a different price for an
+  // identical basket and left the tax row off their invoice. A discount set on
+  // the order carries through to any invoice raised from it (invoiceTotalsFromOrder
+  // restates order.discount), so this stays the single place it is entered.
+  const subtotal = round2(items.reduce((sum, it) => sum + (Number(it.lineTotal) || 0), 0));
+  const discount = round2(Number(body.discount) || 0);
+  if (discount > subtotal + 0.001) {
+    return res.status(400).json({ message: `Discount cannot exceed the subtotal of ₹${round2(subtotal)}` });
+  }
+  const settings = await Setting.getSettings();
+  const totals = computeTotals({
+    items,
+    discount,
+    taxRate: settings.tax.enabled ? settings.tax.rate : 0,
+    taxInclusive: settings.tax.inclusive,
+  });
 
   const depositPayments = [];
   let amountPaid = 0;
@@ -608,4 +726,29 @@ export const createManual = [protect, requirePerm("orders:write"), validate(manu
 
   await writeAudit({ req, action: "order.createManual", entity: "Order", entityId: order._id, meta: order.orderNumber });
   res.status(201).json({ order });
+}];
+
+// Hard-deletes any order. Deleting the order also removes its linked invoice
+// (so no orphaned financial document survives) and the loyalty transactions
+// that referenced it, keeping the ledger free of dangling links.
+export const remove = [protect, requirePerm("orders:write"), async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) return res.status(404).json({ message: "Order not found" });
+
+  const before = order.toObject();
+
+  if (order.invoice) {
+    await Invoice.deleteOne({ _id: order.invoice });
+  }
+  if (order.customer) {
+    await LoyaltyTransaction.deleteMany({ order: order._id, customer: order.customer });
+  } else {
+    await LoyaltyTransaction.deleteMany({ order: order._id });
+  }
+
+  await Order.deleteOne({ _id: order._id });
+  await writeAudit({
+    req, action: "order.delete", entity: "Order", entityId: order._id, before, meta: order.orderNumber,
+  });
+  res.json({ deleted: true, orderNumber: order.orderNumber });
 }];

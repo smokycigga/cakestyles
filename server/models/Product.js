@@ -15,7 +15,7 @@ const productSchema = new mongoose.Schema(
     description: { type: String, required: true },
     images: [String],
     basePrice: { type: Number, required: true, min: 0 },
-    variants: [{ name: String, price: Number }],
+    variants: [{ name: String, price: Number, b2bPrice: { type: Number, default: null } }],
     addOns: [{ name: String, price: Number }],
     availability: { type: String, enum: PRODUCT_AVAILABILITY, default: "active" },
     orderability: { type: String, enum: PRODUCT_ORDERABILITY, default: "online" },
@@ -24,6 +24,7 @@ const productSchema = new mongoose.Schema(
     prepTimeHours: { type: Number, default: 24 },
     taxRate: { type: Number, default: null },
     costPrice: { type: Number, default: null },
+    b2bPrice: { type: Number, default: null },
     internalNotes: { type: String, default: "" },
     status: { type: String, enum: PRODUCT_STATUS, default: "draft" },
     publishAt: { type: Date, default: null },
@@ -35,3 +36,4 @@ const productSchema = new mongoose.Schema(
 productSchema.index({ name: "text", shortDescription: "text", tags: "text" });
 
 export default mongoose.model("Product", productSchema);
+

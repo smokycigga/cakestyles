@@ -27,6 +27,9 @@ const invoiceSchema = new mongoose.Schema(
       rate: { type: Number, default: 0 },
       label: { type: String, default: "Tax" },
       amount: { type: Number, default: 0 },
+      // True when the tax is already inside the line prices, so the tax row is
+      // shown for information and is not added on top of the subtotal.
+      inclusive: { type: Boolean, default: false },
     },
     discount: { type: Number, default: 0 },
     total: { type: Number, required: true },
@@ -39,6 +42,9 @@ const invoiceSchema = new mongoose.Schema(
         amount: { type: Number, required: true },
         method: { type: String, enum: PAYMENT_METHODS },
         ref: { type: String, default: "" },
+        // Provenance for mirrored money, e.g. "Via order CS-2026-0002". Kept
+        // separate from ref, which holds the staff-entered UPI/cheque number.
+        note: { type: String, default: "" },
         date: { type: Date, default: Date.now },
         recordedBy: { userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, name: String },
       },
@@ -53,3 +59,4 @@ invoiceSchema.index({ createdAt: -1 });
 invoiceSchema.index({ status: 1 });
 
 export default mongoose.model("Invoice", invoiceSchema);
+

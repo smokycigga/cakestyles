@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, LayoutGrid, List } from "lucide-react";
-import api from "../../lib/api";
+import { Plus, LayoutGrid, List, Trash2 } from "lucide-react";
+import toast from "react-hot-toast";
+import api, { errMsg } from "../../lib/api";
 import { inr, fmtDate } from "../../lib/format";
 import { ORDER_STATUS_META, PAYMENT_STATUS_META, SOURCE_LABELS } from "../../lib/meta";
 import { PageHeader, Spinner, Badge, Th, Td, TableWrap, EmptyState, Button, inputCls } from "../../components/admin/ui";
+import { useAuth } from "../../store/AuthContext";
 
 const STATUS_KEYS = ["pending_payment", "confirmed", "in_preparation", "ready", "out_for_delivery", "completed"];
 
 export default function Orders() {
+  const { can } = useAuth();
   const [orders, setOrders] = useState(null);
   const [view, setView] = useState("table");
   const [filters, setFilters] = useState({ status: "", source: "", paymentStatus: "", search: "" });
@@ -27,6 +30,19 @@ export default function Orders() {
     const next = { ...filters, [k]: e.target.value };
     setFilters(next);
     load(next);
+  };
+
+  const canDelete = () => true;
+
+  const deleteOrder = async (o) => {
+    if (!confirm(`Delete order ${o.orderNumber}? This also deletes its linked invoice (if any) and cannot be undone.`)) return;
+    try {
+      await api.delete(`/orders/${o._id}`);
+      toast.success(`Order ${o.orderNumber} deleted`);
+      load();
+    } catch (err) {
+      toast.error(errMsg(err));
+    }
   };
 
   return (
@@ -85,34 +101,59 @@ export default function Orders() {
               <Th>Fulfilment</Th>
               <Th>Total</Th>
               <Th>Payment</Th>
+              <Th>Invoice</Th>
               <Th>Status</Th>
               <Th>Date</Th>
+              <Th>Actions</Th>
             </tr>
           </thead>
           <tbody>
             {orders.map((o) => (
               <tr key={o._id} className="hover:bg-wine-50/50">
-                <Td>
+                <Td label="Order">
                   <Link to={`/admin/orders/${o._id}`} className="font-medium text-wine-700 hover:underline">{o.orderNumber}</Link>
                 </Td>
-                <Td>
+                <Td label="Customer">
                   <div className="font-medium text-cocoa-800">{o.customerSnapshot?.name}</div>
                   <div className="text-xs text-cocoa-400">{o.customerSnapshot?.phone}</div>
                 </Td>
-                <Td className="text-cocoa-500 text-xs">{SOURCE_LABELS[o.source] || o.source}</Td>
-                <Td className="text-xs text-cocoa-500">
+                <Td className="text-cocoa-500 text-xs" label="Channel">{SOURCE_LABELS[o.source] || o.source}</Td>
+                <Td className="text-xs text-cocoa-500" label="Fulfilment">
                   {o.fulfilment?.type === "delivery" ? "🛵 Delivery" : "🏬 Pickup"} · {o.fulfilment?.date}
                 </Td>
-                <Td className="font-medium">{inr(o.grandTotal)}</Td>
-                <Td>
+                <Td className="font-medium" label="Total">{inr(o.grandTotal)}</Td>
+                <Td label="Payment">
                   <Badge className={PAYMENT_STATUS_META[o.payment?.status]?.color}>
                     {PAYMENT_STATUS_META[o.payment?.status]?.label || o.payment?.status}
                   </Badge>
                 </Td>
-                <Td>
+                {/* An un-invoiced order is invisible otherwise, which is how a
+                    second order ends up billed by a hand-typed invoice. */}
+                <Td className="text-xs" label="Invoice">
+                  {o.invoice ? (
+                    <Link to={`/admin/invoices/${o.invoice._id}`} className="text-wine-700 hover:underline">
+                      {o.invoice.invoiceNumber}
+                    </Link>
+                  ) : (
+                    <span className="text-cocoa-400">Not invoiced</span>
+                  )}
+                </Td>
+                <Td label="Status">
                   <Badge className={ORDER_STATUS_META[o.status]?.color}>{ORDER_STATUS_META[o.status]?.label}</Badge>
                 </Td>
-                <Td className="text-xs text-cocoa-400">{fmtDate(o.createdAt)}</Td>
+                <Td className="text-xs text-cocoa-400" label="Date">{fmtDate(o.createdAt)}</Td>
+                <Td label="Actions">
+                  {can("orders:write") && canDelete(o) && (
+                    <button
+                      type="button"
+                      title="Delete order"
+                      onClick={() => deleteOrder(o)}
+                      className="text-cocoa-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </Td>
               </tr>
             ))}
           </tbody>

@@ -106,3 +106,4 @@ describe("storefront checkout validation", () => {
     expect(() => validateCheckoutPaymentMethod("cash", settings)).not.toThrow();
   });
 });
+

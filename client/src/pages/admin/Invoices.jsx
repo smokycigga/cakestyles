@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Plus, Download, Search } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Plus, Download, Search, Trash2, Pencil } from "lucide-react";
 import toast from "react-hot-toast";
-import api, { errMsg } from "../../lib/api";
+import api, { errMsg, downloadFile } from "../../lib/api";
 import { inr, fmtDate } from "../../lib/format";
+import { validLines } from "../../lib/invoiceTotals";
 import { downloadInvoicePdf } from "../../lib/invoiceRender";
-import { INVOICE_STATUS_META } from "../../lib/meta";
+import { INVOICE_STATUS_META, ORDER_STATUS_META } from "../../lib/meta";
 import { PageHeader, Spinner, Th, Td, TableWrap, EmptyState, Badge, Button, inputCls, Modal, Field, StatCard } from "../../components/admin/ui";
+import InvoiceLinesEditor from "../../components/admin/InvoiceLinesEditor";
 import { useAuth } from "../../store/AuthContext";
 
 export default function Invoices() {
+  const navigate = useNavigate();
   const { can } = useAuth();
   const [invoices, setInvoices] = useState(null);
   const [status, setStatus] = useState("");
@@ -17,8 +20,32 @@ export default function Invoices() {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [customers, setCustomers] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [storeTax, setStoreTax] = useState({ enabled: false, rate: 0, label: "Tax" });
   const [form, setForm] = useState({ customerId: "", dueDate: "", taxRate: "", discount: "", notes: "" });
   const [lines, setLines] = useState([{ description: "", quantity: 1, unitPrice: "" }]);
+
+  const openCreate = () => {
+    api.get("/customers").then((r) => setCustomers(r.data.customers)).catch(() => {});
+    api.get("/products/admin").then((r) => setProducts(r.data.products)).catch(() => {});
+    api.get("/settings/public").then((r) => setStoreTax(r.data.tax || { enabled: false, rate: 0, label: "Tax" })).catch(() => {});
+    setCreateOpen(true);
+  };
+
+  const closeCreate = () => {
+    setCreateOpen(false);
+    setForm({ customerId: "", dueDate: "", taxRate: "", discount: "", notes: "" });
+    setLines([{ description: "", quantity: 1, unitPrice: "" }]);
+  };
+
+  const onLinesChange = (patch) => {
+    if (patch.lines) setLines(patch.lines);
+    setForm((f) => ({
+      ...f,
+      ...(patch.discount !== undefined ? { discount: patch.discount } : {}),
+      ...(patch.taxRate !== undefined ? { taxRate: patch.taxRate } : {}),
+    }));
+  };
 
   const load = () => {
     const params = {};
@@ -28,44 +55,78 @@ export default function Invoices() {
     api.get("/invoices", { params }).then((r) => setInvoices(r.data.invoices)).catch(() => setInvoices([]));
   };
 
+  // Debounce on the raw inputs. Calling setTimeout(load, 250) from onChange
+  // captured a stale closure and always searched one keystroke behind.
   useEffect(() => {
-    load();
+    const timer = setTimeout(load, 250);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, outstandingOnly]);
+  }, [search, status, outstandingOnly]);
 
-  const total = invoices?.reduce((s, i) => s + i.total, 0) || 0;
+  // A cancelled invoice bills nothing, so it must not inflate "Invoiced" —
+  // that was reading higher than the total the dashboard reports, which
+  // already excludes cancelled (dashboardController).
+  const total = invoices?.filter((i) => i.status !== "cancelled").reduce((s, i) => s + i.total, 0) || 0;
   const outstanding = invoices?.filter((i) => !["paid", "cancelled", "draft"].includes(i.status)).reduce((s, i) => s + i.balanceDue, 0) || 0;
 
   const createStandalone = async (e) => {
     e.preventDefault();
     try {
-      const validLines = lines
-        .filter((l) => l.description && l.unitPrice !== "")
-        .map((l) => ({ description: l.description, quantity: Number(l.quantity) || 1, unitPrice: Number(l.unitPrice) }));
-      if (!form.customerId || validLines.length === 0) return toast.error("Pick a customer and add at least one line");
-      const { data } = await api.post("/invoices", {
+      const payload = validLines(lines);
+      if (!form.customerId || payload.length === 0) return toast.error("Pick a customer and add at least one line");
+      const body = {
         customerId: form.customerId,
-        lines: validLines,
+        lines: payload,
         dueDate: form.dueDate || undefined,
         taxRate: form.taxRate === "" ? null : Number(form.taxRate),
         discount: form.discount ? Number(form.discount) : 0,
         notes: form.notes || undefined,
-      });
+      };
+      let data;
+      try {
+        ({ data } = await api.post("/invoices", body));
+      } catch (err) {
+        // A hand-typed invoice cannot be linked to an order, and an unlinked
+        // invoice never reports its payments back to one. If the customer has
+        // an un-invoiced order, that order is almost certainly what this is for.
+        const conflict = err?.response?.status === 409 && err.response.data?.code === "UNBILLED_ORDERS_EXIST";
+        if (!conflict) throw err;
+        const orders = err.response.data.unbilledOrders || [];
+        const summary = orders
+          .map((o) => `  • ${o.orderNumber} — ${inr(o.grandTotal)} (${ORDER_STATUS_META[o.status]?.label || o.status}), ${fmtDate(o.fulfilment?.date || o.createdAt)}`)
+          .join("\n");
+        const proceed = confirm(
+          `${err.response.data.message}\n\n${summary}\n\nOpen the order and use "Generate Invoice" to keep them linked.\n\nOK — create an unlinked invoice anyway\nCancel — go back`,
+        );
+        if (!proceed) return;
+        ({ data } = await api.post("/invoices", { ...body, confirmUnlinked: true }));
+      }
       toast.success(`Invoice ${data.invoice.invoiceNumber} created`);
-      setCreateOpen(false);
-      window.location.href = `/admin/invoices/${data.invoice._id}`;
+      closeCreate();
+      navigate(`/admin/invoices/${data.invoice._id}`);
     } catch (err) {
       toast.error(errMsg(err));
     }
   };
-
-  const lineTotal = lines.reduce((s, l) => s + ((Number(l.unitPrice) || 0) * (Number(l.quantity) || 0)), 0);
 
   // List rows omit line items, so fetch the full invoice before rendering the PDF.
   const downloadPdf = async (inv) => {
     try {
       const { data } = await api.get(`/invoices/${inv._id}`);
       await downloadInvoicePdf(data.invoice);
+    } catch (err) {
+      toast.error(errMsg(err));
+    }
+  };
+
+  const canDelete = () => true;
+
+  const deleteInvoice = async (inv) => {
+    if (!confirm(`Delete invoice ${inv.invoiceNumber}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`/invoices/${inv._id}`);
+      toast.success(`Invoice ${inv.invoiceNumber} deleted`);
+      load();
     } catch (err) {
       toast.error(errMsg(err));
     }
@@ -78,16 +139,18 @@ export default function Invoices() {
         subtitle={invoices ? `${invoices.length} invoice(s)` : ""}
         actions={
           <>
-            <Button variant="outline" onClick={() => window.open("/api/invoices/export.csv", "_blank")}>
+            <Button
+              variant="outline"
+              onClick={() =>
+                downloadFile("/invoices/export.csv", "cakestyles-invoices.csv").catch((error) =>
+                  toast.error(errMsg(error)),
+                )
+              }
+            >
               <Download className="w-4 h-4" /> Export
             </Button>
             {can("finance:write") && (
-              <Button
-                onClick={() => {
-                  api.get("/customers").then((r) => setCustomers(r.data.customers));
-                  setCreateOpen(true);
-                }}
-              >
+              <Button onClick={openCreate}>
                 <Plus className="w-4 h-4" /> New Invoice
               </Button>
             )}
@@ -106,7 +169,7 @@ export default function Invoices() {
       <div className="grid sm:grid-cols-3 gap-2 mb-5">
         <div className="relative">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-cocoa-400" />
-          <input value={search} onChange={(e) => { setSearch(e.target.value); setTimeout(load, 250); }} placeholder="Invoice #, customer, phone…" className={`${inputCls} pl-10`} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Invoice #, customer, phone…" className={`${inputCls} pl-10`} />
         </div>
         <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
           <option value="">All statuses</option>
@@ -144,26 +207,51 @@ export default function Invoices() {
           <tbody>
             {invoices.map((inv) => (
               <tr key={inv._id} className="hover:bg-wine-50/50">
-                <Td>
+                <Td label="Invoice">
                   <Link to={`/admin/invoices/${inv._id}`} className="font-medium text-wine-700 hover:underline">{inv.invoiceNumber}</Link>
-                  {inv.order && <div className="text-xs text-cocoa-400">↳ order</div>}
+                  {inv.order ? (
+                    <div className="text-xs text-cocoa-400">↳ order</div>
+                  ) : (
+                    <div className="text-xs text-amber-600">no order</div>
+                  )}
                 </Td>
-                <Td>{inv.customerSnapshot?.name}</Td>
-                <Td className="text-xs text-cocoa-400">{fmtDate(inv.createdAt)}</Td>
-                <Td className="text-xs text-cocoa-400">{inv.dueDate || "—"}</Td>
-                <Td className="font-medium">{inr(inv.total)}</Td>
-                <Td className="text-emerald-700">{inr(inv.amountPaid)}</Td>
-                <Td className={inv.balanceDue > 0 ? "text-rose-700 font-medium" : "text-cocoa-400"}>{inv.balanceDue > 0 ? inr(inv.balanceDue) : "—"}</Td>
-                <Td><Badge className={INVOICE_STATUS_META[inv.status]?.color}>{INVOICE_STATUS_META[inv.status]?.label}</Badge></Td>
-                <Td>
-                  <button
-                    type="button"
-                    title="Download PDF"
-                    onClick={() => downloadPdf(inv)}
-                    className="text-cocoa-400 hover:text-wine-700 transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
+                <Td label="Customer">{inv.customerSnapshot?.name}</Td>
+                <Td className="text-xs text-cocoa-400" label="Date">{fmtDate(inv.createdAt)}</Td>
+                <Td className="text-xs text-cocoa-400" label="Due">{inv.dueDate || "—"}</Td>
+                <Td className="font-medium" label="Total">{inr(inv.total)}</Td>
+                <Td className="text-emerald-700" label="Paid">{inr(inv.amountPaid)}</Td>
+                <Td className={inv.balanceDue > 0 ? "text-rose-700 font-medium" : "text-cocoa-400"} label="Balance">{inv.balanceDue > 0 ? inr(inv.balanceDue) : "—"}</Td>
+                <Td label="Status"><Badge className={INVOICE_STATUS_META[inv.status]?.color}>{INVOICE_STATUS_META[inv.status]?.label}</Badge></Td>
+                <Td label="Actions">
+                  <div className="flex items-center gap-1">
+                    {can("finance:write") && inv.status !== "cancelled" && (
+                      <Link
+                        to={`/admin/invoices/${inv._id}?edit=1`}
+                        title="Edit invoice"
+                        className="text-cocoa-400 hover:text-wine-700 p-1 rounded-lg hover:bg-wine-50 transition-colors"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      title="Download PDF"
+                      onClick={() => downloadPdf(inv)}
+                      className="text-cocoa-400 hover:text-wine-700 transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                    {can("finance:write") && canDelete(inv) && (
+                      <button
+                        type="button"
+                        title="Delete invoice"
+                        onClick={() => deleteInvoice(inv)}
+                        className="text-cocoa-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </Td>
               </tr>
             ))}
@@ -172,9 +260,9 @@ export default function Invoices() {
       )}
 
       {/* Standalone invoice modal */}
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New standalone invoice" wide>
+      <Modal open={createOpen} onClose={closeCreate} title="New standalone invoice" wide>
         <form onSubmit={createStandalone} className="space-y-4">
-          <div className="grid sm:grid-cols-4 gap-3">
+          <div className="grid sm:grid-cols-3 gap-3">
             <Field label="Customer *" span={2}>
               <select value={form.customerId} onChange={(e) => setForm({ ...form, customerId: e.target.value })} className={inputCls} required>
                 <option value="">Select customer…</option>
@@ -186,40 +274,17 @@ export default function Invoices() {
             <Field label="Due date">
               <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className={inputCls} />
             </Field>
-            <Field label="Tax rate % (blank = none)">
-              <input type="number" min="0" max="100" step="0.01" value={form.taxRate} onChange={(e) => setForm({ ...form, taxRate: e.target.value })} className={inputCls} />
-            </Field>
           </div>
 
-          <div className="space-y-2">
-            {lines.map((l, i) => (
-              <div key={i} className="grid grid-cols-12 gap-2 items-end">
-                <div className="col-span-6">
-                  <span className="text-[11px] text-cocoa-400">Description</span>
-                  <input value={l.description} onChange={(e) => setLines(lines.map((x, idx) => (idx === i ? { ...x, description: e.target.value } : x)))} className={inputCls} />
-                </div>
-                <div className="col-span-2">
-                  <span className="text-[11px] text-cocoa-400">Qty</span>
-                  <input type="number" min="1" value={l.quantity} onChange={(e) => setLines(lines.map((x, idx) => (idx === i ? { ...x, quantity: e.target.value } : x)))} className={inputCls} />
-                </div>
-                <div className="col-span-3">
-                  <span className="text-[11px] text-cocoa-400">Unit price ₹</span>
-                  <input type="number" min="0" step="0.01" value={l.unitPrice} onChange={(e) => setLines(lines.map((x, idx) => (idx === i ? { ...x, unitPrice: e.target.value } : x)))} className={inputCls} />
-                </div>
-                <div className="col-span-1">
-                  <button type="button" onClick={() => setLines(lines.filter((_, idx) => idx !== i))} className="w-full py-2 text-cocoa-400 hover:text-rose-600">×</button>
-                </div>
-              </div>
-            ))}
-            <Button type="button" variant="outline" onClick={() => setLines([...lines, { description: "", quantity: 1, unitPrice: "" }])}>
-              <Plus className="w-4 h-4" /> Add line
-            </Button>
-          </div>
-
-          <div className="flex justify-between items-center text-sm bg-cream-50 rounded-xl px-4 py-3">
-            <span className="text-cocoa-500">Lines total</span>
-            <span className="font-semibold text-wine-700">{inr(lineTotal)}</span>
-          </div>
+          <InvoiceLinesEditor
+            lines={lines}
+            discount={form.discount}
+            taxRate={form.taxRate}
+            onChange={onLinesChange}
+            products={products}
+            taxLabel={storeTax.label || "Tax"}
+            taxPlaceholder={storeTax.enabled ? storeTax.rate : null}
+          />
 
           <Field label="Notes">
             <input value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} className={inputCls} />

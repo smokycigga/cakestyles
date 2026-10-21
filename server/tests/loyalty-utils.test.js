@@ -83,3 +83,4 @@ describe("completed-order award idempotency", () => {
     expect(shouldAwardForStatusTransition({ ...eligible, points: 0 })).toBe(false);
   });
 });
+

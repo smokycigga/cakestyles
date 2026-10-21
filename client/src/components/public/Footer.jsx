@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Phone, Mail, MapPin } from "lucide-react";
 import { Instagram } from "./icons";
 import { useSettings } from "../../store/SettingsContext";
+import CakeStylesLogo from "./CakeStylesLogo";
 
 export default function Footer() {
   const settings = useSettings();
@@ -11,9 +12,7 @@ export default function Footer() {
     <footer className="bg-wine-900 text-blush-100 mt-20">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
         <div>
-          <div className="font-display text-2xl font-semibold text-white mb-3">
-            {store.name || "Cakestyles"}
-          </div>
+          <CakeStylesLogo className="h-8 w-auto text-white mb-3" />
           <p className="text-sm text-blush-200/80 leading-relaxed">
             {store.tagline || "Handcrafted cakes & bakes, made for your celebrations."}
           </p>

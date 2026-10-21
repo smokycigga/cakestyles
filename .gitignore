@@ -4,6 +4,7 @@ node_modules/
 # Build files
 dist/
 dist-ssr/
+dist-verify/
 
 # Environment variables
 .env
@@ -27,3 +28,9 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+.vercel
+
+# Local assistant/tooling state — never part of the app
+.workbuddy-ai/
+.commandcode/
+.freebuff/

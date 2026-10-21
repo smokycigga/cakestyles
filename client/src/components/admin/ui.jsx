@@ -90,6 +90,7 @@ export const Button = ({ variant = "primary", className = "", children, ...props
   };
   return (
     <button
+      type="button"
       className={`inline-flex items-center justify-center gap-1.5 font-medium text-sm px-4 py-2 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${className}`}
       {...props}
     >
@@ -113,7 +114,7 @@ export const ConfirmButton = ({ onConfirm, children, confirmLabel = "Confirm?", 
 };
 
 export const TableWrap = ({ children }) => (
-  <div className="bg-white rounded-2xl border border-wine-100 overflow-x-auto">
+  <div className="table-card bg-white rounded-2xl border border-wine-100 overflow-x-auto">
     <table className="w-full text-sm">{children}</table>
   </div>
 );
@@ -124,6 +125,6 @@ export const Th = ({ children, className = "" }) => (
   </th>
 );
 
-export const Td = ({ children, className = "" }) => (
-  <td className={`px-4 py-3 border-b border-wine-50 align-middle ${className}`}>{children}</td>
+export const Td = ({ children, className = "", label = "" }) => (
+  <td className={`px-4 py-3 border-b border-wine-50 align-middle ${className}`} data-label={label}>{children}</td>
 );

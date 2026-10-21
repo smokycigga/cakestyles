@@ -3,6 +3,7 @@ import { z } from "zod";
 import Enquiry from "../models/Enquiry.js";
 import Order from "../models/Order.js";
 import Customer from "../models/Customer.js";
+import Setting from "../models/Setting.js";
 import { ENQUIRY_STATUSES, ORDER_SOURCES, PAYMENT_METHODS } from "../config/constants.js";
 import { protect, requirePerm } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -150,7 +151,14 @@ export const convertToOrder = [protect, requirePerm("orders:write"), validate(co
   const enquiry = await Enquiry.findById(req.params.id);
   if (!enquiry) return res.status(404).json({ message: "Enquiry not found" });
   if (enquiry.convertedOrder) {
-    return res.status(400).json({ message: `Already converted to order ${enquiry.convertedOrder}` });
+    // Name the order, not its id — staff cannot look up a raw ObjectId.
+    const existing = await Order.findById(enquiry.convertedOrder).select("orderNumber");
+    return res.status(400).json({
+      message: existing
+        ? `Already converted to order ${existing.orderNumber}`
+        : "This enquiry has already been converted",
+      orderId: String(enquiry.convertedOrder),
+    });
   }
 
   const { amount, fulfilment, deposit, balanceDueDate } = req.body;
@@ -166,7 +174,16 @@ export const convertToOrder = [protect, requirePerm("orders:write"), validate(co
     notes: [enquiry.flavours, enquiry.designNotes].filter(Boolean).join(" — ").slice(0, 500),
   };
 
-  const totals = computeTotals({ items: [item] });
+  // A converted enquiry is an ordinary order and carries the store's tax, the
+  // same as a website or manual one. Quoting it untaxed priced the same custom
+  // cake differently depending on which screen created it, and its invoice came
+  // out with no tax row at all.
+  const settings = await Setting.getSettings();
+  const totals = computeTotals({
+    items: [item],
+    taxRate: settings.tax.enabled ? settings.tax.rate : 0,
+    taxInclusive: settings.tax.inclusive,
+  });
 
   const payments = [];
   let amountPaid = 0;
@@ -213,3 +230,4 @@ export const convertToOrder = [protect, requirePerm("orders:write"), validate(co
   await writeAudit({ req, action: "enquiry.convert", entity: "Enquiry", entityId: enquiry._id, meta: `-> ${order.orderNumber}` });
   res.status(201).json({ order });
 }];
+

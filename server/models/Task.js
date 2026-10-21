@@ -36,3 +36,4 @@ taskSchema.index({ assignedTo: 1, status: 1, dueAt: 1 });
 taskSchema.index({ customer: 1, createdAt: -1 });
 
 export default mongoose.model("Task", taskSchema);
+

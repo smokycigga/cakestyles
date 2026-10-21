@@ -40,6 +40,9 @@ const orderSchema = new mongoose.Schema(
         city: String,
         pincode: String,
         notes: String,
+        latitude: Number,
+        longitude: Number,
+        distanceKm: Number,
       },
     },
     // Line items snapshot name/price at order time (PRD §22.1).
@@ -53,6 +56,7 @@ const orderSchema = new mongoose.Schema(
         addOns: [{ name: String, price: Number }],
         lineTotal: { type: Number, required: true, min: 0 },
         isCustom: { type: Boolean, default: false },
+        isB2b: { type: Boolean, default: false },
         notes: { type: String, default: "" },
       },
     ],

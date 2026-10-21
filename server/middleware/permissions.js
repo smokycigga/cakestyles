@@ -22,3 +22,4 @@ export const PERMISSIONS = {
   "users:manage": ["owner"],
   "audit:read": ["owner"],
 };
+

@@ -5,9 +5,11 @@ import ProductCard from "../components/public/ProductCard";
 import ShareMenu from "../components/public/ShareMenu";
 import FulfilmentChoiceModal from "../components/public/FulfilmentChoiceModal";
 import { useFulfilment } from "../store/FulfilmentContext";
+import { categoryChips, groupByCategoryOrder } from "../lib/catalog";
 
 export default function Menu() {
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -19,23 +21,40 @@ export default function Menu() {
 
   useEffect(() => {
     document.title = "Menu — Cakestyles";
-    api
-      .get("/products")
-      .then((response) => {
-        setProducts(response.data.products || []);
+    let active = true;
+    setLoading(true);
+
+    // Categories only drive chip order and section headings. Losing them is
+    // survivable, so a failure there must not blank the menu.
+    Promise.allSettled([api.get("/products"), api.get("/categories")]).then(([productsResult, categoriesResult]) => {
+      if (!active) return;
+      if (productsResult.status === "fulfilled") {
+        setProducts(productsResult.value.data.products || []);
         setError("");
-      })
-      .catch(() => setError("We couldn’t load the menu. Please check your connection and try again."))
-      .finally(() => setLoading(false));
+      } else {
+        setError("We couldn’t load the menu. Please check your connection and try again.");
+      }
+      if (categoriesResult.status === "fulfilled") {
+        setCategories(categoriesResult.value.data.categories || []);
+      }
+      setLoading(false);
+    });
+
+    return () => {
+      active = false;
+    };
   }, [reloadKey]);
 
-  const categories = useMemo(() => {
+  // Fall back to deriving categories from the products when the categories
+  // request failed, so the menu still renders.
+  const orderedCategories = useMemo(() => {
+    if (categories.length > 0) return categories;
     const seen = new Map();
     for (const product of products) {
       if (product.category?.slug && !seen.has(product.category.slug)) seen.set(product.category.slug, product.category);
     }
     return [...seen.values()];
-  }, [products]);
+  }, [categories, products]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -48,12 +67,18 @@ export default function Menu() {
     });
   }, [activeCat, products, search]);
 
+  // Only offer a chip for a category that actually has products behind it.
+  const chips = useMemo(() => categoryChips(orderedCategories, products), [orderedCategories, products]);
+
   const sections = useMemo(() => {
-    if (activeCat !== "all" || search.trim()) return [{ slug: "results", name: search.trim() ? "Search results" : categories.find((category) => category.slug === activeCat)?.name || "Menu", products: filtered }];
-    return categories
-      .map((category) => ({ ...category, products: filtered.filter((product) => product.category?.slug === category.slug) }))
-      .filter((section) => section.products.length > 0);
-  }, [activeCat, categories, filtered, search]);
+    if (activeCat !== "all" || search.trim()) {
+      const name = search.trim()
+        ? "Search results"
+        : orderedCategories.find((category) => category.slug === activeCat)?.name || "Menu";
+      return [{ slug: "results", name, products: filtered }];
+    }
+    return groupByCategoryOrder(filtered, orderedCategories);
+  }, [activeCat, filtered, orderedCategories, search]);
 
   return (
     <div className="mx-auto min-h-screen max-w-3xl px-4 pb-16 pt-6 sm:px-6">
@@ -94,7 +119,7 @@ export default function Menu() {
       <div className="sticky top-16 z-30 -mx-4 mb-7 border-b border-wine-100 bg-cream-50/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button onClick={() => setActiveCat("all")} className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${activeCat === "all" ? "bg-wine-800 text-white" : "border border-wine-100 bg-white text-cocoa-600"}`}>All</button>
-          {categories.map((category) => (
+          {chips.map((category) => (
             <button key={category.slug} onClick={() => setActiveCat(category.slug)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${activeCat === category.slug ? "bg-wine-800 text-white" : "border border-wine-100 bg-white text-cocoa-600"}`}>
               {category.name}
             </button>

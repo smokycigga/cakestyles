@@ -23,3 +23,4 @@ router.get("/:id", getOne);
 router.put("/:id", update);
 
 export default router;
+

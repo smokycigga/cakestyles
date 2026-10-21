@@ -44,6 +44,13 @@ describe("IST date boundaries (PRD §22.9)", () => {
     const { from } = resolveRange({ from: "2026-01-01", to: "2026-01-31" });
     expect(from.toISOString()).toBe("2025-12-31T18:30:00.000Z");
   });
+
+  it("gives range=all no lower bound, so long histories are not cut off", () => {
+    const { from, to } = resolveRange({ range: "all" });
+    expect(from.getTime()).toBe(0);
+    // Still bounded at the top, so "all" cannot sweep up a future-dated order.
+    expect(istDateString(to)).toBe(istDateString());
+  });
 });
 
 describe("misc helpers", () => {
@@ -57,3 +64,4 @@ describe("misc helpers", () => {
     expect(normalizePhone("9820011223")).toBe("9820011223");
   });
 });
+

@@ -34,3 +34,4 @@ export const writeAudit = async ({ req, action, entity, entityId, before, after,
     console.error("Audit write failed:", err.message);
   }
 };
+

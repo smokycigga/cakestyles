@@ -149,3 +149,4 @@ export const dashboard = [protect, requirePerm("analytics:read"), async (req, re
     outstandingInvoices: unpaidInvoices.slice(0, 8),
   });
 }];
+

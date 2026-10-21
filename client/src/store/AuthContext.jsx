@@ -1,6 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState } from "react";
 import api from "../lib/api";
+import { hasPermission } from "../lib/permissions";
 
 const AuthContext = createContext(null);
 
@@ -27,21 +28,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
-  const can = (perm) => {
-    // Mirrors the server matrix for UI affordances only; server enforces.
-    const PERMISSIONS = {
-      "catalog:write": ["owner", "manager"],
-      "orders:write": ["owner", "manager", "staff"],
-      "customers:write": ["owner", "manager"],
-      "finance:write": ["owner", "accounts"],
-      "expenses:write": ["owner", "accounts"],
-      "analytics:read": ["owner", "manager", "accounts"],
-      "settings:write": ["owner"],
-      "users:manage": ["owner"],
-      "audit:read": ["owner"],
-    };
-    return !!user && (PERMISSIONS[perm] || []).includes(user.role);
-  };
+  const can = (perm) => !!user && hasPermission(user.role, perm);
 
   return (
     <AuthContext.Provider value={{ user, login, logout, can }}>

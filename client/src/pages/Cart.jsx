@@ -7,6 +7,7 @@ import { useSettings } from "../store/SettingsContext";
 import { useFulfilment } from "../store/FulfilmentContext";
 import { inr } from "../lib/format";
 import SlotPicker from "../components/public/SlotPicker";
+import { Placeholder } from "../components/public/ProductCard";
 
 const prettyDate = (value) => value ? new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Choose date";
 
@@ -17,7 +18,12 @@ export default function Cart() {
   const navigate = useNavigate();
   const [slotOpen, setSlotOpen] = useState(false);
   const maxPrepHours = cart.reduce((max, item) => Math.max(max, item.prepTimeHours || 0), 0);
-  const deliveryFee = type === "delivery" && settings?.delivery?.enabled && !(settings.delivery.freeOver > 0 && totalPrice >= settings.delivery.freeOver) ? settings.delivery.fee || 0 : 0;
+  // Delivery is priced by distance (₹18/km), the same way Checkout quotes it and
+  // the server stores it. The old flat fee / free-over rule was unused by the
+  // backend, so the cart showed a different amount than the checkout or the order.
+  const deliveryFee = type === "delivery" && settings?.delivery?.enabled
+    ? Math.ceil(Number(address.distanceKm) || 0) * 18
+    : 0;
   const tax = settings?.tax?.enabled && !settings.tax.inclusive ? (totalPrice * settings.tax.rate) / 100 : 0;
   const total = totalPrice + deliveryFee + tax;
 
@@ -39,7 +45,7 @@ export default function Cart() {
         {cart.map((item) => {
           const itemId = itemKey(item);
           const addOnSum = (item.addOns || []).reduce((sum, addOn) => sum + addOn.price, 0);
-          return <article key={itemId} className="py-5"><div className="flex gap-4"><img src={item.image} alt={item.name} className="h-20 w-20 rounded-xl object-cover" /><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><h2 className="font-medium text-cocoa-900">{item.name}</h2><p className="mt-1 text-xs text-cocoa-400">{prettyDate(date)}, {slot || "slot not selected"}</p>{item.addOns?.length > 0 && <p className="mt-1 text-xs text-wine-600">+ {item.addOns.map((addOn) => addOn.name).join(", ")}</p>}</div><button onClick={() => removeItem(itemId)} className="p-1.5 text-cocoa-400 hover:text-wine-700" aria-label="Remove"><Trash2 className="h-4 w-4" /></button></div><div className="mt-4 flex items-center justify-between"><div className="flex items-center border border-wine-200 bg-white"><button onClick={() => setQuantity(itemId, item.quantity - 1)} className="p-2"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-sm">{item.quantity}</span><button onClick={() => setQuantity(itemId, item.quantity + 1)} className="p-2"><Plus className="h-3.5 w-3.5" /></button></div><span className="font-semibold text-cocoa-900">{inr((item.unitPrice + addOnSum) * item.quantity)}</span></div></div></div></article>;
+          return <article key={itemId} className="py-5"><div className="flex gap-4">{item.image ? <img src={item.image} alt={item.name} className="h-20 w-20 rounded-xl object-cover" /> : <Placeholder name={item.name} className="h-20 w-20 rounded-xl" />}<div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><h2 className="font-medium text-cocoa-900">{item.name}</h2><p className="mt-1 text-xs text-cocoa-400">{prettyDate(date)}, {slot || "slot not selected"}</p>{item.addOns?.length > 0 && <p className="mt-1 text-xs text-wine-600">+ {item.addOns.map((addOn) => addOn.name).join(", ")}</p>}</div><button onClick={() => removeItem(itemId)} className="p-1.5 text-cocoa-400 hover:text-wine-700" aria-label="Remove"><Trash2 className="h-4 w-4" /></button></div><div className="mt-4 flex items-center justify-between"><div className="flex items-center border border-wine-200 bg-white"><button onClick={() => setQuantity(itemId, item.quantity - 1)} className="p-2"><Minus className="h-3.5 w-3.5" /></button><span className="w-8 text-center text-sm">{item.quantity}</span><button onClick={() => setQuantity(itemId, item.quantity + 1)} className="p-2"><Plus className="h-3.5 w-3.5" /></button></div><span className="font-semibold text-cocoa-900">{inr((item.unitPrice + addOnSum) * item.quantity)}</span></div></div></div></article>;
         })}
       </div>
 

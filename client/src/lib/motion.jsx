@@ -16,13 +16,33 @@ export const prefersReducedMotion = () =>
 export function SmoothScroll() {
   useEffect(() => {
     if (prefersReducedMotion()) return;
-    const lenis = new Lenis({ lerp: 0.09, smoothWheel: true });
+    const lenis = new Lenis({
+      duration: 1.2,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      orientation: "vertical",
+      gestureOrientation: "vertical",
+      smoothWheel: true,
+      wheelMultiplier: 1,
+      touchMultiplier: 1.5,
+    });
+
     lenis.on("scroll", ScrollTrigger.update);
-    const raf = (time) => lenis.raf(time * 1000);
-    gsap.ticker.add(raf);
+
+    const updateTicker = (time) => {
+      lenis.raf(time * 1000);
+    };
+
+    gsap.ticker.add(updateTicker);
     gsap.ticker.lagSmoothing(0);
+
+    // Refresh ScrollTrigger after layout settles
+    const timer = setTimeout(() => {
+      ScrollTrigger.refresh();
+    }, 150);
+
     return () => {
-      gsap.ticker.remove(raf);
+      clearTimeout(timer);
+      gsap.ticker.remove(updateTicker);
       lenis.destroy();
     };
   }, []);
@@ -183,6 +203,43 @@ export function Parallax({ children, speed = 0.15, className = "" }) {
   return (
     <div ref={root} className={className}>
       {children}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* ScrollVideo — scrubs a muted hero video with page scroll             */
+/* ------------------------------------------------------------------ */
+export function ScrollVideo({ src, className = "", poster }) {
+  const videoRef = useRef(null);
+  const root = useRef(null);
+
+  useGSAP(() => {
+    const video = videoRef.current;
+    if (!video || prefersReducedMotion()) return;
+
+    const syncDuration = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+      gsap.to(video, {
+        currentTime: video.duration,
+        ease: "none",
+        scrollTrigger: {
+          trigger: root.current,
+          start: "top top",
+          end: "bottom top",
+          scrub: 0.6,
+        },
+      });
+    };
+
+    if (video.readyState >= 1) syncDuration();
+    else video.addEventListener("loadedmetadata", syncDuration, { once: true });
+    return () => video.removeEventListener("loadedmetadata", syncDuration);
+  }, { scope: root });
+
+  return (
+    <div ref={root} className={className} aria-hidden="true">
+      <video ref={videoRef} src={src} poster={poster} muted playsInline preload="auto" className="h-full w-full object-cover" />
     </div>
   );
 }

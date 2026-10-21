@@ -15,3 +15,4 @@ export const nextInvoiceNumber = async (prefix = "INV") => {
   const seq = await Counter.next(`invoice-${prefix}-${year}`);
   return `${prefix}-${year}-${String(seq).padStart(4, "0")}`;
 };
+

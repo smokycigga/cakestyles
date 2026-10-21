@@ -276,7 +276,7 @@ export default function Campaigns() {
                       const meta = RECIPIENT_STATUS[status] || RECIPIENT_STATUS.pending;
                       return (
                         <tr key={recipient._id} className="hover:bg-wine-50/50">
-                          <Td>
+                          <Td label="Recipient">
                             <div className="flex items-center gap-2">
                               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-wine-50 text-wine-600"><UsersRound className="h-4 w-4" /></span>
                               <div>
@@ -285,11 +285,11 @@ export default function Campaigns() {
                               </div>
                             </div>
                           </Td>
-                          <Td className="text-xs text-cocoa-500">
+                          <Td className="text-xs text-cocoa-500" label="Contact">
                             <div>{recipient.email || customer.email || "—"}</div>
                             {(recipient.phone || customer.phone) && <div>{recipient.phone || customer.phone}</div>}
                           </Td>
-                          <Td>
+                          <Td label="Status">
                             <div className="flex items-center gap-2">
                               <Badge className={meta.color}>{meta.label}</Badge>
                               <select
@@ -303,7 +303,7 @@ export default function Campaigns() {
                               </select>
                             </div>
                           </Td>
-                          <Td className="whitespace-nowrap text-xs text-cocoa-400">{fmtDate(recipient.updatedAt || recipient.contactedAt)}</Td>
+                          <Td className="whitespace-nowrap text-xs text-cocoa-400" label="Updated">{fmtDate(recipient.updatedAt || recipient.contactedAt)}</Td>
                         </tr>
                       );
                     })}

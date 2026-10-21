@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, CalendarClock, Cake, ClipboardCheck, Coins, FileText, Gift, Mail, Phone, PhoneCall, Plus, Receipt, StickyNote } from "lucide-react";
+import { ArrowLeft, CalendarClock, Cake, ClipboardCheck, Coins, Download, FileText, Gift, Mail, Phone, PhoneCall, Plus, Receipt, StickyNote } from "lucide-react";
 import toast from "react-hot-toast";
-import api, { errMsg } from "../../lib/api";
+import api, { downloadFile, errMsg } from "../../lib/api";
 import { inr, fmtDate, fmtDateTime } from "../../lib/format";
 import { ORDER_STATUS_META, INVOICE_STATUS_META, ENQUIRY_STATUS_META, PAYMENT_STATUS_META } from "../../lib/meta";
 import { Badge, Button, Field, inputCls, Modal, PageHeader, Spinner, StatCard } from "../../components/admin/ui";
@@ -29,6 +29,7 @@ export default function CustomerDetail() {
   const [points, setPoints] = useState("");
   const [pointsNote, setPointsNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(() => Promise.all([
     api.get(`/customers/${id}`),
@@ -44,6 +45,20 @@ export default function CustomerDetail() {
 
   if (!data) return <Spinner />;
   const { customer, metrics, timeline } = data;
+
+  // The whole relationship with this customer, so it deliberately ignores the
+  // range selector on the Reports page and always exports the full history.
+  const exportStatement = async () => {
+    setExporting(true);
+    try {
+      const slug = customer.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "customer";
+      await downloadFile(`/reports/customer-statement.csv?customerId=${id}&range=all`, `cakestyles-statement-${slug}.csv`);
+    } catch (error) {
+      toast.error(errMsg(error));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const run = async (operation, success) => {
     setSaving(true);
@@ -125,7 +140,7 @@ export default function CustomerDetail() {
       <PageHeader
         title={customer.name}
         subtitle={`${customer.phone}${customer.email ? ` · ${customer.email}` : ""}`}
-        actions={can("customers:write") && <><Button variant="outline" onClick={() => setActivityOpen(true)}><PhoneCall className="h-4 w-4" /> Log Activity</Button><Button variant="outline" onClick={() => setTaskOpen(true)}><CalendarClock className="h-4 w-4" /> Follow Up</Button><Button onClick={() => setNoteOpen(true)}><Plus className="h-4 w-4" /> Note</Button></>}
+        actions={<>{can("analytics:read") && <Button variant="outline" disabled={exporting} onClick={exportStatement}><Download className="h-4 w-4" /> {exporting ? "Preparing…" : "Export Statement"}</Button>}{can("customers:write") && <><Button variant="outline" onClick={() => setActivityOpen(true)}><PhoneCall className="h-4 w-4" /> Log Activity</Button><Button variant="outline" onClick={() => setTaskOpen(true)}><CalendarClock className="h-4 w-4" /> Follow Up</Button><Button onClick={() => setNoteOpen(true)}><Plus className="h-4 w-4" /> Note</Button></>}</>}
       />
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-6">

@@ -13,6 +13,8 @@ export const ORDER_SOURCES = [
   "phone",
   "walk_in",
   "repeat",
+  "bni",
+  "jbn",
   "other",
 ];
 
@@ -67,3 +69,4 @@ export const EXPENSE_CATEGORIES = [
 
 export const TIMEZONE = "Asia/Kolkata";
 export const CURRENCY = "INR";
+

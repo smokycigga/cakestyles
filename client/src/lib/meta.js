@@ -47,6 +47,8 @@ export const SOURCE_LABELS = {
   phone: "Phone",
   walk_in: "Walk-in",
   repeat: "Repeat Customer",
+  bni: "BNI",
+  jbn: "JBN",
   other: "Other",
 };
 

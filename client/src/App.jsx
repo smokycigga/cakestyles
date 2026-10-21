@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import Home from "./pages/Home";
@@ -11,38 +12,49 @@ import Checkout from "./pages/Checkout";
 import OrderConfirmation from "./pages/OrderConfirmation";
 import Track from "./pages/Track";
 
-import AdminLogin from "./pages/admin/Login";
-import AdminLayout from "./components/admin/Layout";
-import Dashboard from "./pages/admin/Dashboard";
-import Orders from "./pages/admin/Orders";
-import OrderDetail from "./pages/admin/OrderDetail";
-import ManualOrder from "./pages/admin/ManualOrder";
-import Products from "./pages/admin/Products";
-import ProductForm from "./pages/admin/ProductForm";
-import MenuManager from "./pages/admin/MenuManager";
-import Customers from "./pages/admin/Customers";
-import CustomerDetail from "./pages/admin/CustomerDetail";
-import CRM from "./pages/admin/CRM";
-import Tasks from "./pages/admin/Tasks";
-import Campaigns from "./pages/admin/Campaigns";
-import Enquiries from "./pages/admin/Enquiries";
-import Invoices from "./pages/admin/Invoices";
-import InvoiceDetail from "./pages/admin/InvoiceDetail";
-import Expenses from "./pages/admin/Expenses";
-import Reports from "./pages/admin/Reports";
-import Settings from "./pages/admin/Settings";
-import Users from "./pages/admin/Users";
-import AuditLog from "./pages/admin/AuditLog";
+// The admin section is code-split so public storefront visitors never pay for
+// the admin pages on first load. Each admin route loads its chunk on demand.
+const AdminLogin = lazy(() => import("./pages/admin/Login"));
+const AdminLayout = lazy(() => import("./components/admin/Layout"));
+const Dashboard = lazy(() => import("./pages/admin/Dashboard"));
+const Orders = lazy(() => import("./pages/admin/Orders"));
+const OrderDetail = lazy(() => import("./pages/admin/OrderDetail"));
+const ManualOrder = lazy(() => import("./pages/admin/ManualOrder"));
+const Products = lazy(() => import("./pages/admin/Products"));
+const ProductForm = lazy(() => import("./pages/admin/ProductForm"));
+const MenuManager = lazy(() => import("./pages/admin/MenuManager"));
+const Customers = lazy(() => import("./pages/admin/Customers"));
+const CustomerDetail = lazy(() => import("./pages/admin/CustomerDetail"));
+const CRM = lazy(() => import("./pages/admin/CRM"));
+const Tasks = lazy(() => import("./pages/admin/Tasks"));
+const Campaigns = lazy(() => import("./pages/admin/Campaigns"));
+const Enquiries = lazy(() => import("./pages/admin/Enquiries"));
+const Invoices = lazy(() => import("./pages/admin/Invoices"));
+const InvoiceDetail = lazy(() => import("./pages/admin/InvoiceDetail"));
+const Expenses = lazy(() => import("./pages/admin/Expenses"));
+const Reports = lazy(() => import("./pages/admin/Reports"));
+const Settings = lazy(() => import("./pages/admin/Settings"));
+const Users = lazy(() => import("./pages/admin/Users"));
+const AuditLog = lazy(() => import("./pages/admin/AuditLog"));
 
 import Navbar from "./components/public/Navbar";
 import Footer from "./components/public/Footer";
 import { useAuth } from "./store/AuthContext";
 
-const PublicShell = ({ children }) => (
+const AdminFallback = () => (
+  <div className="flex min-h-screen items-center justify-center bg-cream-50">
+    <div className="flex items-center gap-3 text-wine-600">
+      <span className="h-5 w-5 animate-spin rounded-full border-2 border-wine-300 border-t-wine-700" />
+      <span className="text-sm font-medium">Loading…</span>
+    </div>
+  </div>
+);
+
+const PublicShell = ({ children, hideFooter = false }) => (
   <div className="min-h-screen flex flex-col">
     <Navbar />
     <main className="flex-1">{children}</main>
-    <Footer />
+    {!hideFooter && <Footer />}
   </div>
 );
 
@@ -57,7 +69,7 @@ export default function App() {
   return (
     <Routes>
       {/* Public website */}
-      <Route path="/" element={<PublicShell><Home /></PublicShell>} />
+      <Route path="/" element={<PublicShell hideFooter><Home /></PublicShell>} />
       <Route path="/menu" element={<PublicShell><Menu /></PublicShell>} />
       <Route path="/menu/product/:slug" element={<PublicShell><ProductDetail /></PublicShell>} />
       <Route path="/custom-cakes" element={<PublicShell><CustomCakes /></PublicShell>} />
@@ -69,12 +81,14 @@ export default function App() {
       <Route path="/track" element={<PublicShell><Track /></PublicShell>} />
 
       {/* Admin */}
-      <Route path="/admin/login" element={<AdminLogin />} />
+      <Route path="/admin/login" element={<Suspense fallback={<AdminFallback />}><AdminLogin /></Suspense>} />
       <Route
         path="/admin"
         element={
           <AdminGuard>
-            <AdminLayout />
+            <Suspense fallback={<AdminFallback />}>
+              <AdminLayout />
+            </Suspense>
           </AdminGuard>
         }
       >

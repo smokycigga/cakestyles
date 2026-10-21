@@ -74,3 +74,4 @@ settingSchema.statics.getSettings = async function () {
 };
 
 export default mongoose.model("Setting", settingSchema);
+

@@ -7,6 +7,7 @@ import Order from "../models/Order.js";
 import { validate } from "../middleware/validate.js";
 import { writeAudit } from "../utils/audit.js";
 import { sumPayments, paymentStatusFor } from "../utils/pricing.js";
+import { syncPaymentToInvoice } from "../utils/paymentSync.js";
 
 const objectIdSchema = z.string().refine(
   (value) => /^[a-f\d]{24}$/i.test(value) && mongoose.isValidObjectId(value),
@@ -177,6 +178,15 @@ export const verifyPayment = [validate(verifySchema), async (req, res) => {
 
   await order.save();
 
+  // No-op unless the order was invoiced before it was paid online, in which
+  // case the invoice must not keep showing the balance as outstanding.
+  await syncPaymentToInvoice(order, {
+    amount: order.grandTotal,
+    method: "razorpay",
+    ref: razorpay_payment_id,
+    note: "Online payment via Razorpay",
+  });
+
   await writeAudit({
     actorName: "razorpay",
     action: "order.payment.verified",
@@ -187,3 +197,4 @@ export const verifyPayment = [validate(verifySchema), async (req, res) => {
 
   res.json({ ok: true, orderNumber: order.orderNumber, status: order.status });
 }];
+

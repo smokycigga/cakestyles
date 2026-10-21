@@ -14,7 +14,7 @@ import { slugify } from "../utils/misc.js";
 import { writeAudit } from "../utils/audit.js";
 import { sendCSV } from "../utils/csv.js";
 
-const variantSchema = z.object({ name: z.string().min(1), price: z.number().min(0) });
+const variantSchema = z.object({ name: z.string().min(1), price: z.number().min(0), b2bPrice: z.number().min(0).nullable().optional() });
 const addOnSchema = z.object({ name: z.string().min(1), price: z.number().min(0) });
 
 const productFields = {
@@ -34,6 +34,7 @@ const productFields = {
   prepTimeHours: z.number().min(0).optional(),
   taxRate: z.number().min(0).max(100).nullable().optional(),
   costPrice: z.number().min(0).nullable().optional(),
+  b2bPrice: z.number().min(0).nullable().optional(),
   internalNotes: z.string().optional(),
   status: z.enum(PRODUCT_STATUS).optional(),
   publishAt: z.string().nullable().optional(),
@@ -45,7 +46,7 @@ const updateSchema = z.object(productFields).partial();
 
 const AUDIT_FIELDS = [
   "name", "basePrice", "category", "availability", "orderability", "featured",
-  "status", "variants", "addOns", "taxRate", "costPrice",
+  "status", "variants", "addOns", "taxRate", "costPrice", "b2bPrice",
 ];
 
 export const escapeSearchRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -54,6 +55,18 @@ export const escapeSearchRegex = (value) => String(value).replace(/[.*+?^${}()|[
 export const publicFilter = (now = new Date()) => ({
   $or: [{ status: "published" }, { status: "scheduled", publishAt: { $lte: now } }],
 });
+
+// Hiding a category in Admin > Menu must hide the products inside it too,
+// not just the category chip on the storefront.
+export const publicCatalogFilter = (categoryIds, now = new Date()) => ({
+  ...publicFilter(now),
+  category: { $in: categoryIds },
+});
+
+const visibleCategoryIds = async () => {
+  const categories = await Category.find({ active: true }).select("_id");
+  return categories.map((category) => category._id);
+};
 
 const uniqueSlug = async (base) => {
   let slug = slugify(base) || "product";
@@ -64,11 +77,24 @@ const uniqueSlug = async (base) => {
   return slug;
 };
 
+// B2B wholesale rates are internal-only. The public endpoints exclude the
+// top-level field via .select(), but a variant-level b2bPrice rides along in
+// the variants array — strip it so a customer can never see wholesale rates.
+const toPublicProduct = (product) => {
+  const obj = product.toObject();
+  delete obj.b2bPrice;
+  if (Array.isArray(obj.variants)) {
+    obj.variants = obj.variants.map(({ b2bPrice, ...variant }) => variant);
+  }
+  return obj;
+};
+
 export const listPublic = async (req, res) => {
-  const filter = { ...publicFilter() };
+  const visibleIds = await visibleCategoryIds();
+  const filter = { ...publicCatalogFilter(visibleIds) };
 
   if (req.query.category) {
-    const cat = await Category.findOne({ slug: req.query.category });
+    const cat = await Category.findOne({ slug: req.query.category, active: true });
     if (!cat) return res.json({ products: [] });
     filter.category = cat._id;
   }
@@ -107,13 +133,13 @@ export const listPublic = async (req, res) => {
     if (ranked.length > 0) {
       const rankById = new Map(ranked.map((entry, index) => [String(entry._id), { ...entry, salesRank: index + 1 }]));
       const rankedProducts = await Product.find({ ...filter, _id: { $in: ranked.map((entry) => entry._id) } })
-        .select("-costPrice -internalNotes")
+        .select("-costPrice -internalNotes -b2bPrice")
         .populate("category", "name slug");
       const products = rankedProducts
         .map((product) => {
           const sales = rankById.get(String(product._id));
           return {
-            ...product.toObject(),
+            ...toPublicProduct(product),
             salesRank: sales.salesRank,
             unitsSold: sales.unitsSold,
             salesRevenue: sales.salesRevenue,
@@ -125,27 +151,31 @@ export const listPublic = async (req, res) => {
     }
 
     const products = await Product.find({ ...filter, featured: true })
-      .select("-costPrice -internalNotes")
+      .select("-costPrice -internalNotes -b2bPrice")
       .populate("category", "name slug")
       .sort({ name: 1 })
       .limit(limit);
-    return res.json({ products, source: "featured" });
+    return res.json({ products: products.map(toPublicProduct), source: "featured" });
   }
 
   const products = await Product.find(filter)
-    .select("-costPrice -internalNotes")
+    .select("-costPrice -internalNotes -b2bPrice")
     .populate("category", "name slug")
     .sort({ featured: -1, name: 1 });
 
-  res.json({ products });
+  res.json({ products: products.map(toPublicProduct) });
 };
 
 export const getPublic = async (req, res) => {
-  const product = await Product.findOne({ slug: req.params.slug, ...publicFilter() })
-    .select("-costPrice -internalNotes")
+  const visibleIds = await visibleCategoryIds();
+  const product = await Product.findOne({
+    slug: req.params.slug,
+    ...publicCatalogFilter(visibleIds),
+  })
+    .select("-costPrice -internalNotes -b2bPrice")
     .populate("category", "name slug");
   if (!product) return res.status(404).json({ message: "Product not found" });
-  res.json({ product });
+  res.json({ product: toPublicProduct(product) });
 };
 
 export const listAdmin = [protect, requirePerm("catalog:read"), async (req, res) => {
@@ -292,6 +322,8 @@ export const exportCsv = [protect, requirePerm("catalog:read"), async (req, res)
     { label: "addOns", get: (p) => p.addOns.map((a) => `${a.name}=${a.price}`).join("|") },
     { label: "prepTimeHours", key: "prepTimeHours" },
     { label: "taxRate", get: (p) => p.taxRate ?? "" },
+    { label: "b2bPrice", get: (p) => p.b2bPrice ?? "" },
+    { label: "b2bVariants", get: (p) => p.variants.filter((v) => v.b2bPrice != null).map((v) => `${v.name}=${v.b2bPrice}`).join("|") },
   ]);
 }];
 
@@ -363,3 +395,4 @@ export const importCsv = [protect, requirePerm("catalog:write"), validate(import
   await writeAudit({ req, action: "product.import", entity: "Product", meta: `created ${created}, updated ${updated}` });
   res.json({ created, updated, errors });
 }];
+

@@ -77,7 +77,14 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   if (res.headersSent) return next(err);
-  res.status(err.status || 500).json({ message: err.message || "Internal server error" });
+  const status = err.status || 500;
+  // A deliberate 4xx carries a message written for whoever is looking at the
+  // screen. Anything else is a fault, and its message is a Mongo error or a
+  // stack detail — logged in full above, never handed to the client.
+  res.status(status).json({
+    message: (status < 500 && err.message) || "Something went wrong. Please try again.",
+  });
 });
 
 export default app;
+

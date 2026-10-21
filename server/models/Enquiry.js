@@ -37,3 +37,4 @@ const enquirySchema = new mongoose.Schema(
 );
 
 export default mongoose.model("Enquiry", enquirySchema);
+

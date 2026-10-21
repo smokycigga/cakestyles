@@ -8,3 +8,4 @@ export const notifyOrderPlaced = (order) => notify("order.placed", { orderNumber
 export const notifyOrderStatus = (order, status) => notify("order.status", { orderNumber: order.orderNumber, status });
 export const notifyInvoiceIssued = (invoice) => notify("invoice.issued", { invoiceNumber: invoice.invoiceNumber, total: invoice.total });
 export const notifyEnquiryReceived = (enquiry) => notify("enquiry.received", { name: enquiry.customerSnapshot.name, eventDate: enquiry.eventDate });
+

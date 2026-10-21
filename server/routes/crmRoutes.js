@@ -8,3 +8,4 @@ router.get("/segments", customerSegments);
 router.get("/important-dates", importantDates);
 
 export default router;
+

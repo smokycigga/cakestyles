@@ -1,427 +1,889 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, ArrowDown, Star, Egg, Heart, Sparkles, Clock3 } from "lucide-react";
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Plus, 
+  ArrowRight, 
+  Star, 
+  Phone, 
+  Mail, 
+  MapPin, 
+  Check, 
+  Heart, 
+  ShieldCheck 
+} from "lucide-react";
+import { Instagram, Facebook, WhatsApp } from "../components/public/icons";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useGSAP } from "@gsap/react";
 import api from "../lib/api";
-import ProductCard from "../components/public/ProductCard";
-import FulfilmentChoice from "../components/public/FulfilmentChoice";
-import DeliverySetupModal from "../components/public/DeliverySetupModal";
-import { useSettings } from "../store/SettingsContext";
-import { useFulfilment } from "../store/FulfilmentContext";
+import CakeStylesLogo from "../components/public/CakeStylesLogo";
+import ExpandableGallery from "../components/ui/expandable-gallery";
+import CircularImageGallery from "../components/ui/carousel-circular-image-gallery";
+import { useCart } from "../store/CartContext";
+import { getProductImage } from "../lib/productImage";
+import { toBestsellerCard } from "../lib/catalog";
+import { Placeholder } from "../components/public/ProductCard";
 import {
   SmoothScroll,
-  Preloader,
-  SplitHeading,
-  Reveal,
-  Parallax,
   MagneticButton,
-  Counter,
-  Marquee,
-  RotatingBadge,
 } from "../lib/motion";
 
-const HERO_FALLBACKS = [
-  "/images/products/chocolate.png",
-  "/images/products/redvelvet.png",
-  "/images/products/lotus.png",
-];
+gsap.registerPlugin(ScrollTrigger, useGSAP);
 
-const PILLARS = [
-  { icon: Egg, num: "01", title: "100% Veg & Eggless", text: "Our entire menu is pure vegetarian — no exceptions, no egg-based shortcuts, ever." },
-  { icon: Heart, num: "02", title: "Baked Fresh, Never Frozen", text: "Every cake leaves the oven only after you order it. Small batches, real ingredients." },
-  { icon: Sparkles, num: "03", title: "Designed With You", text: "From birthday themes to multi-tier weddings — bespoke cakes sketched around your story." },
-  { icon: Clock3, num: "04", title: "Pickup or Delivery", text: "Choose a slot that suits you at checkout, or get it delivered to the celebration." },
-];
+const HERO_VIDEO = "/images/gallery/Create_a_premium_cinematic_bak%20(1).mp4";
 
-const TESTIMONIALS = [
-  { name: "Priya S.", tag: "Birthday Cake", text: "The Belgian truffle cake was the star of my daughter's birthday. Moist, rich, and not overly sweet. Gone in minutes!" },
-  { name: "Rahul M.", tag: "Corporate Order", text: "Ordered brownie boxes for the office — everyone asked where they were from. The packaging alone deserves an award." },
-  { name: "Ananya I.", tag: "Custom Cake", text: "They recreated our reference photo exactly, down to the gold leaf. Communication was flawless from enquiry to delivery." },
-];
-
-const GALLERY_COLS = [
-  ["/images/gallery/gallery1.jpg", "/images/gallery/gallery4.jpg", "/images/gallery/gallery7.jpg"],
-  ["/images/gallery/gallery2.jpg", "/images/gallery/gallery5.jpg", "/images/gallery/gallery8.jpg"],
-  ["/images/gallery/gallery3.jpg", "/images/gallery/gallery6.jpg"],
+// Customer reviews data
+const REVIEWS = [
+  {
+    id: 1,
+    quote: "The freshness and flavor are unmatched. Every single bite feels like absolute happiness.",
+    author: "Ananya S.",
+    city: "Kolkata",
+    avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+    rating: 5,
+  },
+  {
+    id: 2,
+    quote: "Cakestyles never fails to make our celebrations extra special! The custom birthday cake was a huge hit.",
+    author: "Rohit P.",
+    city: "Bangalore",
+    avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+    rating: 5,
+  },
+  {
+    id: 3,
+    quote: "Beautiful cakes, amazing taste, and such elegant packaging. Best eggless bakery in the country.",
+    author: "Meera K.",
+    city: "Mumbai",
+    avatar: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80",
+    rating: 5,
+  },
+  {
+    id: 4,
+    quote: "Ordered the Biscoff cheesecake and brownies. The texture was heavenly and melted instantly in my mouth.",
+    author: "Siddharth V.",
+    city: "Delhi",
+    avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
+    rating: 5,
+  },
 ];
 
 export default function Home() {
-  const [featured, setFeatured] = useState([]);
-  const settings = useSettings();
   const navigate = useNavigate();
-  const { type, setType, confirmFulfilment } = useFulfilment();
-  const [deliveryOpen, setDeliveryOpen] = useState(false);
-  const store = settings?.store || {};
+  const { addToCart } = useCart();
+  
+  const portalRef = useRef(null);
+  const carouselRef = useRef(null);
+  const reviewsCarouselRef = useRef(null);
+  const [bestsellers, setBestsellers] = useState([]);
+  const [bestsellersLoading, setBestsellersLoading] = useState(true);
+  const [emailInput, setEmailInput] = useState("");
+  const [subscribed, setSubscribed] = useState(false);
 
-  const choosePickup = () => {
-    setType("pickup");
-    navigate("/menu");
-  };
-
-  const completeDelivery = (address) => {
-    confirmFulfilment({ type: "delivery", address });
-    setDeliveryOpen(false);
-    navigate("/menu");
-  };
-
+  // The bestsellers row is real data: ranked by units sold, falling back to
+  // Featured products before any sales exist. Nothing is hardcoded, so a new
+  // product can appear here without a code change.
   useEffect(() => {
-    document.title = "Cakestyles — Handcrafted Cakes & Bakes";
+    document.title = "Cakestyles — Luxury Parisian Patisserie";
+    let active = true;
+
     api
-      .get("/products?bestsellers=1&limit=4")
-      .then((r) => setFeatured(r.data.products.slice(0, 4)))
-      .catch(() => {});
+      .get("/products?bestsellers=1&limit=8")
+      .then((response) => {
+        if (!active) return;
+        const source = response.data?.source === "featured" ? "featured" : "sales";
+        setBestsellers(
+          (response.data?.products || []).map((product) =>
+            toBestsellerCard(product, getProductImage(product), source),
+          ),
+        );
+      })
+      .catch(() => {
+        if (active) setBestsellers([]);
+      })
+      .finally(() => {
+        if (active) setBestsellersLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const heroImages = (featured.length ? featured.slice(0, 3).map((p) => p.images?.[0]).filter(Boolean) : HERO_FALLBACKS);
+  // Buttery-smooth GSAP ScrollTrigger synchronized with Lenis
+  useGSAP(
+    () => {
+      const tl = gsap.timeline({
+        scrollTrigger: {
+          trigger: portalRef.current,
+          start: "top top",
+          end: "bottom bottom",
+          scrub: 1,
+          invalidateOnRefresh: true,
+        },
+      });
+
+      tl.to(".portal-left-panel", { xPercent: -102, ease: "power1.inOut" }, 0)
+        .to(".portal-right-panel", { xPercent: 102, ease: "power1.inOut" }, 0)
+        .to(".portal-logo", { scale: 1.18, opacity: 0.95, ease: "power1.inOut" }, 0)
+        .to(".portal-video-bg", { scale: 1.0, ease: "power1.inOut" }, 0)
+        .to(".portal-duotone", { opacity: 0.35, ease: "power1.inOut" }, 0)
+        .to(".portal-dot-tl", { top: "8%", left: "6%", opacity: 0.4, ease: "power1.inOut" }, 0)
+        .to(".portal-dot-br", { bottom: "8%", right: "6%", opacity: 0.4, ease: "power1.inOut" }, 0)
+        .to(".portal-seal", { opacity: 0.2, ease: "power1.inOut" }, 0);
+
+      // Trigger recalculation after DOM is fully painted
+      ScrollTrigger.refresh();
+    },
+    { scope: portalRef }
+  );
+
+  const scrollCarousel = (direction) => {
+    if (!carouselRef.current) return;
+    const scrollAmount = direction * 340;
+    carouselRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
+  };
+
+  const scrollReviews = (direction) => {
+    if (!reviewsCarouselRef.current) return;
+    const scrollAmount = direction * 360;
+    reviewsCarouselRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
+  };
+
+  const handleQuickAdd = (e, item) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // A product with sizes has no single price to add. Send the customer to
+    // the detail page to pick one instead of guessing and getting it wrong.
+    if (item.variants?.length > 0) {
+      navigate(item.slug ? `/menu/product/${item.slug}` : "/menu");
+      return;
+    }
+
+    addToCart({
+      productId: item.id,
+      slug: item.slug,
+      name: item.name,
+      image: item.image,
+      unitPrice: item.price,
+      quantity: 1,
+    });
+  };
+
+  const handleNewsletterSubmit = (e) => {
+    e.preventDefault();
+    if (!emailInput) return;
+    setSubscribed(true);
+  };
 
   return (
-    <div className="overflow-x-clip">
-      <Preloader />
+    <div className="overflow-x-clip bg-[#fff9fa] text-[#461220] selection:bg-[#eed3db] selection:text-[#461220]">
       <SmoothScroll />
 
-      {/* ============================== HERO ============================== */}
-      <section data-hero className="relative min-h-[92vh] flex items-center grain bg-gradient-to-b from-blush-100 via-cream-50 to-cream-50">
-        {/* soft radial glows */}
-        <div className="pointer-events-none absolute -top-24 -right-24 w-[34rem] h-[34rem] rounded-full bg-blush-200/50 blur-3xl" />
-        <div className="pointer-events-none absolute top-1/2 -left-32 w-96 h-96 rounded-full bg-gold-300/20 blur-3xl" />
-
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 py-16 lg:py-20 grid lg:grid-cols-12 gap-12 items-center w-full">
-          {/* Copy */}
-          <div className="lg:col-span-7">
-            <Reveal y={16}>
-              <div className="inline-flex items-center gap-2 bg-white/70 backdrop-blur border border-wine-200/70 rounded-full pl-1.5 pr-4 py-1.5 text-xs font-medium text-wine-700">
-                <span className="bg-wine-700 text-cream-50 rounded-full px-2.5 py-1 text-[10px] tracking-wider uppercase">Studio Bakery</span>
-                100% veg & eggless · made to order
-              </div>
-            </Reveal>
-
-            <SplitHeading
-              as="h1"
-              text="Every celebration deserves a *showstopper.*"
-              delay={0.9}
-              className="font-display text-[clamp(2.6rem,7vw,5.4rem)] leading-[1.02] font-semibold text-wine-800 mt-6 text-balance"
+      {/* =================================================================== */}
+      {/* 1. PORTAL HERO                                                      */}
+      {/* =================================================================== */}
+      <section ref={portalRef} className="relative h-[220vh] w-full bg-[#eed3db]">
+        <div className="sticky top-0 h-[100svh] w-full overflow-hidden isolate flex items-center justify-center">
+          
+          {/* Layer 1: Full-Bleed Looping Background Video */}
+          <div className="portal-video-bg absolute inset-0 z-0 origin-center scale-110 will-change-transform">
+            <video 
+              src={HERO_VIDEO} 
+              poster="/images/gallery/gallery3.jpg"
+              preload="metadata"
+              autoPlay loop muted playsInline 
+              className="w-full h-full object-cover"
             />
-
-            <Reveal delay={1.6} y={20}>
-              <p className="text-cocoa-500 text-base sm:text-lg max-w-md leading-relaxed mt-6">
-                {store.tagline || "Handcrafted cakes, brownies and desserts from our studio kitchen — baked fresh for your celebrations, big and small."}
-              </p>
-            </Reveal>
-
-            <Reveal delay={1.75} y={20}>
-              <div className="mt-9 flex flex-wrap items-center gap-4">
-                <MagneticButton
-                  onClick={() => document.getElementById("start-order")?.scrollIntoView({ behavior: "smooth" })}
-                  className="group inline-flex items-center gap-2.5 bg-wine-700 hover:bg-wine-800 text-cream-50 font-medium px-8 py-4 rounded-full text-sm tracking-wide shadow-xl shadow-wine-700/20 transition-colors"
-                >
-                  Order Online
-                  <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-                </MagneticButton>
-                <Link
-                  to="/custom-cakes"
-                  className="inline-flex items-center gap-2 border border-wine-300/80 hover:border-wine-500 hover:bg-white/60 text-wine-700 font-medium px-8 py-4 rounded-full text-sm tracking-wide transition-all"
-                >
-                  Design a Custom Cake
-                </Link>
-              </div>
-            </Reveal>
-
-            <Reveal delay={1.9} y={16}>
-              <div className="mt-10 flex flex-wrap items-center gap-x-7 gap-y-3 text-xs text-cocoa-500">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="flex text-gold-500">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} className="w-3.5 h-3.5 fill-current" />
-                    ))}
-                  </span>
-                  4.9 loved by customers
-                </span>
-                <span className="hidden sm:inline w-px h-4 bg-wine-200" />
-                <span><Counter to={2500} suffix="+" /> cakes & counting</span>
-                <span className="hidden sm:inline w-px h-4 bg-wine-200" />
-                <span>Fresh every single day</span>
-              </div>
-            </Reveal>
+            <div className="portal-duotone absolute inset-0 bg-[#eed3db] mix-blend-color opacity-0 pointer-events-none will-change-opacity" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(70,18,32,0.18)_100%)] pointer-events-none" />
           </div>
 
-          {/* Floating product cluster */}
-          <div className="lg:col-span-5 relative h-[26rem] sm:h-[30rem] hidden md:block">
-            <Parallax speed={0.12} className="absolute top-2 right-8 w-52 sm:w-60">
-              <div className="animate-float rounded-[2rem] overflow-hidden border border-white shadow-2xl shadow-wine-900/20 rotate-3">
-                <img src={heroImages[0]} alt="Signature cake" className="w-full aspect-square object-cover" />
-              </div>
-            </Parallax>
-            <Parallax speed={-0.1} className="absolute bottom-6 left-4 w-44 sm:w-52">
-              <div className="animate-float rounded-[2rem] overflow-hidden border border-white shadow-2xl shadow-wine-900/20 -rotate-6" style={{ animationDelay: "1.4s" }}>
-                <img src={heroImages[1]} alt="Freshly baked treat" className="w-full aspect-square object-cover" />
-              </div>
-            </Parallax>
-            <Parallax speed={0.06} className="absolute bottom-24 right-2 w-36 sm:w-44">
-              <div className="animate-float rounded-[1.6rem] overflow-hidden border border-white shadow-xl shadow-wine-900/20 rotate-6" style={{ animationDelay: "0.7s" }}>
-                <img src={heroImages[2]} alt="Dessert of the day" className="w-full aspect-square object-cover" />
-              </div>
-            </Parallax>
-            <div className="absolute top-6 left-0">
-              <RotatingBadge className="drop-shadow-xl" />
-            </div>
-          </div>
-        </div>
+          {/* Layer 2: Parting Portal Panels */}
+          <div className="portal-left-panel absolute top-0 bottom-0 left-0 w-[52vw] bg-[#fbf2f4] z-10 border-r border-[#461220]/10 shadow-[20px_0_40px_rgba(70,18,32,0.08)] pointer-events-none will-change-transform" />
+          <div className="portal-right-panel absolute top-0 bottom-0 right-0 w-[52vw] bg-[#fbf2f4] z-10 border-l border-[#461220]/10 shadow-[-20px_0_40px_rgba(70,18,32,0.08)] pointer-events-none will-change-transform" />
 
-        {/* Scroll cue */}
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1.5 text-wine-400">
-          <span className="text-[10px] tracking-[0.3em] uppercase">Scroll</span>
-          <ArrowDown className="w-4 h-4 animate-bounce" />
-        </div>
-      </section>
+          {/* Layer 3: Travelling Accent Dots */}
+          <div className="portal-dot-tl absolute z-20 w-2 h-2 rounded-full bg-[#c88242] shadow-[0_0_12px_#c88242] pointer-events-none top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 will-change-transform" />
+          <div className="portal-dot-br absolute z-20 w-2 h-2 rounded-full bg-[#c88242] shadow-[0_0_12px_#c88242] pointer-events-none bottom-1/2 right-1/2 translate-x-1/2 translate-y-1/2 will-change-transform" />
 
-      {/* ============================ MARQUEE ============================ */}
-      <Marquee
-        className="bg-wine-900 text-cream-100 py-4 text-sm font-medium tracking-[0.18em] uppercase"
-        items={["Handcrafted daily", "100% eggless", "Real Belgian chocolate", "Custom wedding cakes", "Fresh cream, never artificial", "Made to order"]}
-      />
-
-      {/* ===================== PICK-UP / DELIVERY ===================== */}
-      <section id="start-order" className="mx-auto max-w-4xl px-4 py-20 sm:px-6 sm:py-24">
-        <Reveal>
-          <div className="mx-auto mb-7 flex aspect-square w-full max-w-sm items-center justify-center overflow-hidden rounded-[2rem] bg-blush-200 shadow-2xl shadow-wine-900/10">
-            <div className="text-center">
-              <p className="font-display text-6xl font-semibold tracking-tight text-wine-800">{store.name || "Cakestyles"}</p>
-              <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.35em] text-wine-600">Fresh bakes · made to order</p>
-            </div>
-          </div>
-        </Reveal>
-        <Reveal delay={0.12}>
-          <FulfilmentChoice
-            selectedType={type}
-            deliveryDisabled={settings?.delivery?.enabled === false}
-            onPickup={choosePickup}
-            onDelivery={() => setDeliveryOpen(true)}
-            title={`Welcome to ${store.name || "Cakestyles"}`}
-            description="Choose self pick-up or set your delivery address, then explore the complete menu."
-          />
-        </Reveal>
-      </section>
-
-      <DeliverySetupModal
-        open={deliveryOpen}
-        onClose={() => setDeliveryOpen(false)}
-        onConfirm={completeDelivery}
-      />
-
-      {/* ============================ PILLARS ============================ */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 py-20 sm:py-28">
-        <Reveal>
-          <p className="text-xs tracking-[0.3em] uppercase text-gold-600 font-semibold">Why Cakestyles</p>
-        </Reveal>
-        <SplitHeading
-          text="Baked the *slow,* honest way."
-          className="font-display text-3xl sm:text-5xl font-semibold text-wine-800 mt-3 text-balance"
-        />
-
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-12">
-          {PILLARS.map(({ icon: Icon, num, title, text }, i) => (
-            <Reveal key={title} delay={i * 0.12}>
-              <div className="group relative bg-white rounded-3xl border border-wine-100 p-6 h-full transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl hover:shadow-wine-900/10 hover:border-wine-200">
-                <span className="absolute top-5 right-6 font-display text-4xl text-wine-100 group-hover:text-blush-200 transition-colors">{num}</span>
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-wine-600 to-wine-800 flex items-center justify-center shadow-lg shadow-wine-700/25">
-                  <Icon className="w-5 h-5 text-gold-300" />
-                </div>
-                <h3 className="font-medium text-cocoa-900 mt-5">{title}</h3>
-                <p className="text-sm text-cocoa-500 mt-2 leading-relaxed">{text}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* ========================== BESTSELLERS ========================== */}
-      {featured.length > 0 && (
-        <section className="bg-gradient-to-b from-cream-50 via-blush-50/60 to-cream-50 py-20 sm:py-28">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <Reveal>
-                  <p className="text-xs tracking-[0.3em] uppercase text-gold-600 font-semibold">Crowd favourites</p>
-                </Reveal>
-                <SplitHeading
-                  text="The bakes they *keep* coming back for."
-                  className="font-display text-3xl sm:text-5xl font-semibold text-wine-800 mt-3 text-balance"
-                />
-              </div>
-              <Reveal delay={0.2}>
-                <Link to="/menu" className="group inline-flex items-center gap-2 text-sm font-medium text-wine-700 hover:text-wine-900">
-                  View the full menu
-                  <span className="w-9 h-9 rounded-full border border-wine-200 flex items-center justify-center transition-all group-hover:bg-wine-700 group-hover:border-wine-700 group-hover:text-cream-50">
-                    <ArrowRight className="w-4 h-4" />
-                  </span>
-                </Link>
-              </Reveal>
-            </div>
-
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mt-12">
-              {featured.map((p, i) => (
-                <Reveal key={p._id} delay={i * 0.1}>
-                  <ProductCard product={p} />
-                </Reveal>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* =========================== STATS STRIP =========================== */}
-      <section className="relative bg-wine-900 grain overflow-hidden">
-        <div className="pointer-events-none absolute -top-32 left-1/3 w-96 h-96 rounded-full bg-wine-700/60 blur-3xl" />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-20 grid grid-cols-2 lg:grid-cols-4 gap-10 text-center relative">
-          {[
-            { value: <Counter to={2500} suffix="+" />, label: "Cakes & bakes delivered" },
-            { value: <Counter to={6} suffix=" yrs" />, label: "Of celebrations" },
-            { value: <Counter to={100} suffix="%" />, label: "Veg & eggless menu" },
-            { value: <>4.9<span className="text-gold-400">★</span></>, label: "Average rating" },
-          ].map((s, i) => (
-            <Reveal key={i} delay={i * 0.1}>
-              <div className="font-display text-4xl sm:text-5xl font-semibold text-cream-50">{s.value}</div>
-              <div className="text-xs tracking-[0.2em] uppercase text-blush-200/60 mt-3">{s.label}</div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
-      {/* ========================= CUSTOM CAKES ========================= */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 py-20 sm:py-28 grid lg:grid-cols-2 gap-14 items-center">
-        {/* Image cluster */}
-        <div className="relative h-[24rem] sm:h-[28rem] order-2 lg:order-1">
-          <Parallax speed={0.14} className="absolute inset-x-8 top-0 bottom-16">
-            <div className="h-full rounded-[2.5rem] overflow-hidden border-8 border-white shadow-2xl shadow-wine-900/20 rotate-2">
-              <img src="/images/gallery/gallery2.jpg" alt="Custom celebration cake" className="w-full h-full object-cover" />
-            </div>
-          </Parallax>
-          <Parallax speed={-0.12} className="absolute -bottom-2 -left-2 w-40 sm:w-52">
-            <div className="rounded-[1.8rem] overflow-hidden border-[6px] border-white shadow-xl shadow-wine-900/25 -rotate-3">
-              <img src="/images/gallery/gallery5.jpg" alt="Custom cake detail" className="w-full aspect-[3/4] object-cover" />
-            </div>
-          </Parallax>
-        </div>
-
-        {/* Copy */}
-        <div className="order-1 lg:order-2">
-          <Reveal>
-            <p className="text-xs tracking-[0.3em] uppercase text-gold-600 font-semibold">Bespoke creations</p>
-          </Reveal>
-          <SplitHeading
-            text="Your dream cake, *brought to life.*"
-            className="font-display text-3xl sm:text-5xl font-semibold text-wine-800 mt-3 text-balance"
-          />
-          <Reveal delay={0.15}>
-            <p className="text-sm text-cocoa-500 mt-4 leading-relaxed max-w-md">
-              Share your idea, a reference photo, or just a colour palette — we'll sketch a custom design, confirm every detail, and bake it fresh for your big day.
-            </p>
-          </Reveal>
-          <Reveal delay={0.25}>
-            <Link
-              to="/custom-cakes"
-              className="group inline-flex items-center gap-2.5 mt-8 bg-wine-700 hover:bg-wine-800 text-cream-50 font-medium px-8 py-4 rounded-full text-sm tracking-wide shadow-xl shadow-wine-700/20 transition-colors"
-            >
-              Start an Enquiry
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-            </Link>
-          </Reveal>
-          <Reveal delay={0.3}>
-            <div className="mt-8 flex flex-wrap gap-3">
-              {["Birthdays", "Weddings", "Anniversaries", "Corporate"].map((t) => (
-                <span key={t} className="text-xs bg-blush-100 text-wine-700 rounded-full px-3.5 py-1.5 font-medium">{t}</span>
-              ))}
-            </div>
-          </Reveal>
-        </div>
-      </section>
-
-      {/* ======================== TESTIMONIALS ======================== */}
-      <section className="bg-gradient-to-b from-cream-50 via-blush-50/40 to-cream-50 py-20 sm:py-28">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <Reveal>
-            <p className="text-xs tracking-[0.3em] uppercase text-gold-600 font-semibold text-center">Happy customers</p>
-          </Reveal>
-          <SplitHeading
-            text="Don't take *our* word for it."
-            className="font-display text-3xl sm:text-5xl font-semibold text-wine-800 mt-3 text-balance text-center"
-          />
-          <div className="grid sm:grid-cols-3 gap-5 mt-12">
-            {TESTIMONIALS.map(({ name, tag, text }, i) => (
-              <Reveal key={name} delay={i * 0.12}>
-                <div className="bg-white rounded-3xl border border-wine-100 p-6 h-full flex flex-col">
-                  <div className="flex text-gold-500 mb-4">
-                    {[...Array(5)].map((_, j) => (
-                      <Star key={j} className="w-4 h-4 fill-current" />
-                    ))}
-                  </div>
-                  <p className="text-sm text-cocoa-600 leading-relaxed flex-1">"{text}"</p>
-                  <div className="mt-5 pt-4 border-t border-wine-100">
-                    <p className="font-medium text-wine-800 text-sm">{name}</p>
-                    <p className="text-xs text-cocoa-400 mt-0.5">{tag}</p>
-                  </div>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ======================== GALLERY STRIP ======================== */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 py-20 sm:py-28">
-        <Reveal>
-          <p className="text-xs tracking-[0.3em] uppercase text-gold-600 font-semibold text-center">From our kitchen</p>
-        </Reveal>
-        <SplitHeading
-          text="A peek behind the *oven door.*"
-          className="font-display text-3xl sm:text-5xl font-semibold text-wine-800 mt-3 text-balance text-center"
-        />
-        <div className="flex gap-3 mt-12 overflow-x-auto pb-4 snap-x snap-mandatory">
-          {GALLERY_COLS.flat().map((src, i) => (
-            <Parallax key={src} speed={0.04 + (i % 3) * 0.02}>
-              <img
-                src={src}
-                alt={`Gallery ${i + 1}`}
-                className="h-72 sm:h-80 w-auto rounded-2xl border border-white shadow-lg snap-center object-cover"
+          {/* Layer 4: Exact Vector Logo in Portal */}
+          <div className="portal-logo relative z-20 flex items-center justify-center w-full max-w-xl sm:max-w-2xl select-none pointer-events-none px-6 will-change-transform">
+            <div className="w-full flex items-center justify-center">
+              <CakeStylesLogo 
+                className="w-full h-auto max-h-[18vh] drop-shadow-md text-[#9D182B]"
               />
-            </Parallax>
-          ))}
+            </div>
+          </div>
+
+          {/* Layer 5: Corner Metadata */}
+          <div className="absolute top-20 left-6 sm:left-10 z-20 pointer-events-none hidden sm:block">
+            <p className="text-[10.5px] uppercase tracking-[0.2em] font-semibold text-[#461220]/75">
+              KOLKATA
+            </p>
+          </div>
+          <div className="absolute top-20 right-6 sm:right-10 z-20 pointer-events-none hidden sm:block">
+            <p className="text-[10.5px] uppercase tracking-[0.2em] font-semibold text-[#461220]/75">
+              ESTD 2016
+            </p>
+          </div>
+
+          {/* Lower Left: Luxury Packaging Seal */}
+          <div className="portal-seal absolute bottom-6 sm:bottom-10 left-5 sm:left-10 z-20 pointer-events-none will-change-opacity">
+            <div className="w-[64px] h-[64px] sm:w-[72px] sm:h-[72px] rounded-full border border-[#461220]/30 bg-white/40 backdrop-blur-[6px] flex flex-col items-center justify-center text-[#461220] text-center shadow-[0_4px_16px_rgba(70,18,32,0.08)] p-1">
+              <div className="w-full h-full rounded-full border border-dashed border-[#461220]/25 flex flex-col items-center justify-center">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#461220" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" className="opacity-90">
+                  <path d="M12 2L15 8L21 9L17 14L18 20L12 17L6 20L7 14L3 9L9 8L12 2Z" />
+                </svg>
+                <span className="text-[6px] sm:text-[7px] font-bold leading-[1.05] uppercase tracking-[0.14em] mt-0.5 opacity-90">
+                  Made Fresh<br />Every Day
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Lower Right: Scroll Indicator */}
+          <div className="absolute bottom-7 sm:bottom-10 right-6 sm:right-10 z-20 pointer-events-none flex items-center gap-2 text-[#461220]/80">
+            <span className="text-[10px] uppercase tracking-[0.2em] font-semibold">SCROLL TO EXPLORE</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-[#c88242] animate-pulse" />
+          </div>
+
         </div>
       </section>
 
-      {/* ======================== FINAL CTA ======================== */}
-      <section className="relative bg-wine-900 grain overflow-hidden py-20 sm:py-28">
-        <div className="pointer-events-none absolute -top-24 right-0 w-[30rem] h-[30rem] rounded-full bg-blush-800/30 blur-3xl" />
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 text-center relative">
-          <Reveal>
-            <SplitHeading
-              text="Ready to order *something sweet?*"
-              className="font-display text-3xl sm:text-5xl font-semibold text-cream-50 text-balance"
-            />
-          </Reveal>
-          <Reveal delay={0.15}>
-            <p className="text-sm text-blush-200/60 mt-4 max-w-md mx-auto">
-              Browse our full menu, pick your favourites, and place your order in minutes. Fresh, handmade, delivered.
-            </p>
-          </Reveal>
-          <Reveal delay={0.25}>
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
-              <MagneticButton
-                onClick={() => (window.location.href = "/menu")}
-                className="group inline-flex items-center gap-2.5 bg-gold-500 hover:bg-gold-400 text-wine-900 font-medium px-8 py-4 rounded-full text-sm tracking-wide shadow-xl shadow-gold-500/20 transition-colors"
-              >
-                Browse Menu
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-              </MagneticButton>
+      {/* =================================================================== */}
+      {/* 2. OUR BESTSELLERS SECTION                                          */}
+      {/* =================================================================== */}
+      <section className="relative bg-[#fff9fa] py-16 sm:py-24 px-4 sm:px-10 lg:px-16 overflow-hidden border-b border-[#461220]/10">
+        <div className="max-w-7xl mx-auto relative z-10">
+          
+          {/* Section Header */}
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 sm:mb-12 gap-4">
+            <div>
+              <div className="flex items-center gap-2.5 mb-2.5">
+                <span className="w-2 h-2 rounded-full bg-[#c88242]" />
+                <p className="text-[11px] uppercase tracking-[0.25em] font-semibold text-[#461220]/80">
+                  01 / CURATED RELEASES
+                </p>
+              </div>
+              <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#461220] tracking-tight">
+                Our Bestsellers
+              </h2>
+              <p className="mt-2 text-xs sm:text-sm text-[#70293b] max-w-lg leading-relaxed">
+                Handcrafted daily with authentic Parisian recipes, Belgian couverture & fresh dairy cream.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-4">
               <Link
-                to="/contact"
-                className="inline-flex items-center gap-2 border border-cream-100/30 hover:border-cream-100/60 text-cream-50 font-medium px-8 py-4 rounded-full text-sm tracking-wide transition-all"
+                to="/menu"
+                className="group flex items-center gap-2 text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#461220] hover:text-[#c88242] transition-colors"
               >
-                Contact Us
+                <span>View All Menu</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform text-[#c88242]" />
               </Link>
             </div>
-          </Reveal>
+          </div>
+
+          {/* Carousel Slider with Left / Right Floating Buttons */}
+          <div className="relative group/carousel">
+            
+            {/* Left Nav Arrow Button */}
+            <button
+              onClick={() => scrollCarousel(-1)}
+              className="absolute -left-2 sm:-left-6 top-[42%] -translate-y-1/2 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#fae5eb] border border-[#eed3db] text-[#461220] flex items-center justify-center shadow-md hover:bg-[#f7d4df] hover:scale-105 active:scale-95 transition-all"
+              aria-label="Previous bestsellers"
+            >
+              <ChevronLeft className="w-5 h-5 stroke-[2]" />
+            </button>
+
+            {/* Right Nav Arrow Button */}
+            <button
+              onClick={() => scrollCarousel(1)}
+              className="absolute -right-2 sm:-right-6 top-[42%] -translate-y-1/2 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#fae5eb] border border-[#eed3db] text-[#461220] flex items-center justify-center shadow-md hover:bg-[#f7d4df] hover:scale-105 active:scale-95 transition-all"
+              aria-label="Next bestsellers"
+            >
+              <ChevronRight className="w-5 h-5 stroke-[2]" />
+            </button>
+
+            {/* Scrollable Products Row */}
+            <div
+              ref={carouselRef}
+              className="flex gap-4 sm:gap-7 overflow-x-auto scrollbar-none scroll-smooth pb-6 px-1"
+              style={{ scrollSnapType: "x mandatory" }}
+            >
+              {bestsellersLoading &&
+                [...Array(3)].map((_, index) => (
+                  <div
+                    key={index}
+                    className="w-[260px] sm:w-[300px] lg:w-[320px] shrink-0 rounded-3xl border border-[#461220]/8 bg-white p-4 sm:p-5"
+                    style={{ scrollSnapAlign: "start" }}
+                  >
+                    <div className="aspect-square animate-pulse rounded-2xl bg-[#f4dfe6]" />
+                    <div className="mt-4 h-4 w-2/3 animate-pulse rounded bg-[#f4dfe6]" />
+                    <div className="mt-2 h-3 w-full animate-pulse rounded bg-[#f9edf2]" />
+                  </div>
+                ))}
+
+              {!bestsellersLoading && bestsellers.length === 0 && (
+                <div className="w-full py-12 text-center">
+                  <p className="text-sm text-[#70293b]">
+                    Our bakers are preparing something special — check back soon.
+                  </p>
+                </div>
+              )}
+
+              {!bestsellersLoading && bestsellers.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => navigate(item.slug ? `/menu/product/${item.slug}` : "/menu")}
+                  className="w-[260px] sm:w-[300px] lg:w-[320px] shrink-0 bg-white rounded-3xl p-4 sm:p-5 border border-[#461220]/12 shadow-[0_8px_24px_rgba(70,18,32,0.05)] hover:shadow-[0_16px_36px_rgba(70,18,32,0.12)] hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col justify-between group"
+                  style={{ scrollSnapAlign: "start" }}
+                >
+                  {/* Card Header Tag */}
+                  <div className="flex items-center justify-between mb-3 px-1">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#70293b]">
+                      {item.category}
+                    </span>
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#eed3db] text-[#461220]">
+                      {item.tag}
+                    </span>
+                  </div>
+
+                  {/* Product Photography Box with Soft Studio BG */}
+                  <div className="relative aspect-square rounded-2xl bg-gradient-to-b from-[#fdf0f4] to-[#fae6ec] overflow-hidden flex items-center justify-center p-4 border border-[#461220]/05">
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        className="w-full h-full object-contain drop-shadow-lg group-hover:scale-106 transition-transform duration-500"
+                      />
+                    ) : (
+                      <Placeholder name={item.name} className="w-full h-full rounded-2xl" />
+                    )}
+
+                    {/* Circular Wine Add Button */}
+                    <button
+                      onClick={(e) => handleQuickAdd(e, item)}
+                      className="absolute bottom-3 right-3 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#461220] hover:bg-[#340d18] text-white flex items-center justify-center shadow-[0_4px_12px_rgba(70,18,32,0.3)] active:scale-90 transition-transform"
+                      aria-label={`Add ${item.name} to cart`}
+                    >
+                      <Plus className="w-5 h-5 stroke-[2.5]" />
+                    </button>
+                  </div>
+
+                  {/* Card Details */}
+                  <div className="pt-4 px-1">
+                    <h3 className="font-display text-lg sm:text-xl font-semibold text-[#461220] leading-snug group-hover:text-[#c88242] transition-colors">
+                      {item.name}
+                    </h3>
+                    <p className="text-xs text-[#70293b] mt-1.5 line-clamp-2 leading-relaxed">
+                      {item.description}
+                    </p>
+                    
+                    <div className="mt-4 pt-3 border-t border-[#461220]/10 flex items-center justify-between">
+                      <span className="font-display text-lg sm:text-xl font-bold text-[#461220]">
+                        ₹{item.price}
+                      </span>
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#c88242] group-hover:underline flex items-center gap-1">
+                        Order Now →
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+          </div>
+
         </div>
       </section>
+
+      {/* =================================================================== */}
+      {/* 3. CUSTOM CREATIONS BANNER + 3 BENEFIT BADGES                       */}
+      {/* =================================================================== */}
+      <section className="relative bg-[#fff9fa] py-16 sm:py-24 px-4 sm:px-10 lg:px-16 overflow-hidden border-b border-[#461220]/10">
+        
+        <div className="max-w-5xl mx-auto relative z-10 space-y-10 sm:space-y-14">
+          
+          {/* Main Custom Creations Banner Card */}
+          <div className="relative rounded-3xl bg-gradient-to-br from-[#fae7ed] via-[#fae6ec] to-[#f8dce5] border border-[#eed3db] overflow-hidden shadow-[0_16px_40px_rgba(70,18,32,0.08)]">
+            
+            <div className="grid md:grid-cols-12 gap-8 items-center p-6 sm:p-10 lg:p-12">
+              
+              {/* Left Column: Pill, Title, Text, Button */}
+              <div className="md:col-span-7 space-y-5">
+                
+                {/* Pill Badge */}
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#461220]/20 bg-white/50 text-xs font-bold uppercase tracking-widest text-[#461220]">
+                  <span>🎁</span>
+                  <span>Custom Creations</span>
+                </div>
+
+                {/* Big Editorial Headline */}
+                <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl text-[#461220] leading-[1.15] tracking-tight">
+                  Dream it.<br />
+                  <span className="italic font-normal text-[#c88242]">We bake it.</span>
+                </h2>
+
+                {/* Subtitle */}
+                <p className="text-xs sm:text-sm text-[#70293b] leading-relaxed max-w-md">
+                  From intimate birthdays to lavish multi-tier celebrations, we create cakes as special as your moments.
+                </p>
+
+                {/* CTA Button */}
+                <div className="pt-2">
+                  <MagneticButton
+                    onClick={() => navigate("/custom-cakes")}
+                    className="inline-flex items-center gap-2.5 bg-[#461220] hover:bg-[#340d18] text-white px-7 py-3.5 rounded-full text-xs sm:text-sm font-semibold shadow-md hover:shadow-lg transition-all"
+                  >
+                    <span>Order Custom Cake</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </MagneticButton>
+                </div>
+
+              </div>
+
+              {/* Right Column: Custom Cake Photography */}
+              <div className="md:col-span-5 flex justify-center">
+                <CircularImageGallery />
+              </div>
+
+            </div>
+
+          </div>
+
+          {/* 3 Benefit Badges (Fast Delivery, 100% Eggless, Secure Packaging) */}
+          <div className="grid sm:grid-cols-3 gap-5">
+            
+            {/* 1. Fast Delivery */}
+            <div className="flex items-center gap-4 p-5 rounded-2xl bg-white border border-[#eed3db]/80 shadow-[0_4px_16px_rgba(70,18,32,0.04)]">
+              <div className="w-13 h-13 rounded-full bg-[#fde9ee] text-[#461220] flex items-center justify-center shrink-0 p-3.5 shadow-inner">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#461220" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="6" cy="18" r="3" />
+                  <circle cx="18" cy="18" r="3" />
+                  <path d="M6 18H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l3 4h4" />
+                  <path d="M15 13l2-4h3" />
+                  <path d="M9 18l3-5h6" />
+                </svg>
+              </div>
+              <div>
+                <h4 className="font-display text-base font-bold text-[#461220]">Fast Delivery</h4>
+                <p className="text-xs text-[#70293b] mt-0.5">On time, every time</p>
+              </div>
+            </div>
+
+            {/* 2. 100% Eggless */}
+            <div className="flex items-center gap-4 p-5 rounded-2xl bg-white border border-[#eed3db]/80 shadow-[0_4px_16px_rgba(70,18,32,0.04)]">
+              <div className="w-13 h-13 rounded-full bg-[#fde9ee] text-[#461220] flex items-center justify-center shrink-0 p-3.5 shadow-inner">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#461220" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8" />
+                  <path d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2-1 2-1" />
+                  <path d="M2 21h20" />
+                  <path d="M7 8v3" />
+                  <path d="M12 8v3" />
+                  <path d="M17 8v3" />
+                  <path d="M7 4h.01" />
+                  <path d="M12 4h.01" />
+                  <path d="M17 4h.01" />
+                </svg>
+              </div>
+              <div>
+                <h4 className="font-display text-base font-bold text-[#461220]">100% Eggless</h4>
+                <p className="text-xs text-[#70293b] mt-0.5">Pure & delicious</p>
+              </div>
+            </div>
+
+            {/* 3. Secure Packaging */}
+            <div className="flex items-center gap-4 p-5 rounded-2xl bg-white border border-[#eed3db]/80 shadow-[0_4px_16px_rgba(70,18,32,0.04)]">
+              <div className="w-13 h-13 rounded-full bg-[#fde9ee] text-[#461220] flex items-center justify-center shrink-0 p-3.5 shadow-inner">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#461220" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                  <path d="M9 12l2 2 4-4" />
+                </svg>
+              </div>
+              <div>
+                <h4 className="font-display text-base font-bold text-[#461220]">Secure Packaging</h4>
+                <p className="text-xs text-[#70293b] mt-0.5">Handled with care</p>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* =================================================================== */}
+      {/* 4. "LOVED BY THOUSANDS" REVIEWS SECTION (Reference Image)          */}
+      {/* =================================================================== */}
+      <section className="relative bg-[#fff9fa] py-16 sm:py-24 px-4 sm:px-10 lg:px-16 overflow-hidden border-b border-[#461220]/10">
+        <div className="max-w-7xl mx-auto relative z-10">
+          
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 sm:mb-12 gap-4">
+            <div>
+              <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold text-[#461220] tracking-tight">
+                Loved by Thousands
+              </h2>
+              <p className="mt-2 text-xs sm:text-sm text-[#70293b] leading-relaxed">
+                Real moments, real smiles.
+              </p>
+            </div>
+
+            <Link
+              to="/about"
+              className="group flex items-center gap-2 text-xs sm:text-sm font-semibold uppercase tracking-wider text-[#461220] hover:text-[#c88242] transition-colors"
+            >
+              <span>View All Reviews</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform text-[#c88242]" />
+            </Link>
+          </div>
+
+          {/* Carousel Review Cards */}
+          <div className="relative group/reviews">
+            
+            {/* Left Nav Arrow Button */}
+            <button
+              onClick={() => scrollReviews(-1)}
+              className="absolute -left-2 sm:-left-6 top-1/2 -translate-y-1/2 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#fae5eb] border border-[#eed3db] text-[#461220] flex items-center justify-center shadow-md hover:bg-[#f7d4df] hover:scale-105 active:scale-95 transition-all"
+              aria-label="Previous reviews"
+            >
+              <ChevronLeft className="w-5 h-5 stroke-[2]" />
+            </button>
+
+            {/* Right Nav Arrow Button */}
+            <button
+              onClick={() => scrollReviews(1)}
+              className="absolute -right-2 sm:-right-6 top-1/2 -translate-y-1/2 z-30 w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#fae5eb] border border-[#eed3db] text-[#461220] flex items-center justify-center shadow-md hover:bg-[#f7d4df] hover:scale-105 active:scale-95 transition-all"
+              aria-label="Next reviews"
+            >
+              <ChevronRight className="w-5 h-5 stroke-[2]" />
+            </button>
+
+            {/* Scrollable Reviews Row */}
+            <div
+              ref={reviewsCarouselRef}
+              className="flex gap-4 sm:gap-6 overflow-x-auto scrollbar-none scroll-smooth pb-6 px-1"
+              style={{ scrollSnapType: "x mandatory" }}
+            >
+              {REVIEWS.map((rev) => (
+                <div
+                  key={rev.id}
+                  className="w-[280px] sm:w-[320px] lg:w-[360px] shrink-0 bg-gradient-to-b from-[#fae7ed]/60 to-white rounded-3xl p-6 sm:p-7 border border-[#461220]/10 shadow-[0_8px_24px_rgba(70,18,32,0.04)] flex flex-col justify-between"
+                  style={{ scrollSnapAlign: "start" }}
+                >
+                  <div>
+                    {/* Quotation Badge */}
+                    <div className="w-9 h-9 rounded-full bg-[#fae6ec] text-[#461220] flex items-center justify-center text-lg font-serif font-bold shadow-inner mb-4">
+                      “
+                    </div>
+
+                    {/* Review text */}
+                    <p className="text-xs sm:text-sm text-[#461220] leading-relaxed font-normal">
+                      {rev.quote}
+                    </p>
+
+                    {/* 5 Stars */}
+                    <div className="flex items-center gap-1 mt-4 text-[#461220]">
+                      {[...Array(rev.rating)].map((_, i) => (
+                        <Star key={i} className="w-3.5 h-3.5 fill-[#461220] stroke-none" />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Author Profile */}
+                  <div className="flex items-center gap-3 mt-6 pt-4 border-t border-[#461220]/10">
+                    <img
+                      src={rev.avatar}
+                      alt={rev.author}
+                      className="w-10 h-10 rounded-full object-cover border border-[#eed3db]"
+                    />
+                    <div>
+                      <h4 className="font-sans text-xs sm:text-sm font-bold text-[#461220]">
+                        {rev.author}
+                      </h4>
+                      <p className="text-[11px] text-[#70293b]/80">
+                        {rev.city}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* =================================================================== */}
+      {/* 5. "OUR PROMISE" BRAND BANNER (Reference Image)                    */}
+      {/* =================================================================== */}
+      <section className="relative bg-[#fff9fa] py-12 sm:py-16 px-4 sm:px-10 lg:px-16 overflow-hidden">
+        <div className="max-w-6xl mx-auto">
+          
+          <div className="relative rounded-3xl bg-[#fbe7ed] border border-[#eed3db] p-8 sm:p-12 lg:p-14 shadow-[0_12px_36px_rgba(70,18,32,0.06)] overflow-hidden">
+            
+            <div className="grid lg:grid-cols-12 gap-8 items-center">
+              
+              {/* Left Column */}
+              <div className="lg:col-span-5 space-y-4">
+                <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-[#461220]/20 bg-white/50 text-xs font-semibold text-[#461220]">
+                  <Heart className="w-3.5 h-3.5 fill-[#461220]/30 stroke-[#461220]" />
+                  <span>Our Promise</span>
+                </div>
+
+                <h3 className="font-display text-3xl sm:text-4xl font-semibold text-[#461220] leading-tight">
+                  Pure Ingredients.<br />Honest Bakes.
+                </h3>
+
+                <p className="text-xs sm:text-sm text-[#70293b] leading-relaxed max-w-sm">
+                  We believe in keeping it real with clean ingredients and lots of love.
+                </p>
+              </div>
+
+              {/* Right Column: 4 Circular Outline Pillars */}
+              <div className="lg:col-span-7 grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                
+                {/* 1. No Preservatives */}
+                <div className="flex flex-col items-center p-3">
+                  <div className="w-14 h-14 rounded-full border border-[#461220]/25 bg-white/60 flex items-center justify-center text-[#461220] mb-2.5 shadow-sm">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#461220" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                      <path d="M4.93 4.93l14.14 14.14" />
+                    </svg>
+                  </div>
+                  <h5 className="font-sans text-xs font-bold text-[#461220]">No Preservatives</h5>
+                  <p className="text-[10px] text-[#70293b]/80">Ever</p>
+                </div>
+
+                {/* 2. No Artificial Flavors */}
+                <div className="flex flex-col items-center p-3">
+                  <div className="w-14 h-14 rounded-full border border-[#461220]/25 bg-white/60 flex items-center justify-center text-[#461220] mb-2.5 shadow-sm">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#461220" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2" />
+                      <path d="M8.5 2h7" />
+                      <path d="M7 16h10" />
+                    </svg>
+                  </div>
+                  <h5 className="font-sans text-xs font-bold text-[#461220]">No Artificial</h5>
+                  <p className="text-[10px] text-[#70293b]/80">Flavors</p>
+                </div>
+
+                {/* 3. No Refined Sugar */}
+                <div className="flex flex-col items-center p-3">
+                  <div className="w-14 h-14 rounded-full border border-[#461220]/25 bg-white/60 flex items-center justify-center text-[#461220] mb-2.5 shadow-sm">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#461220" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <path d="M3 9h18" />
+                      <path d="M9 21V9" />
+                      <path d="M5 5l14 14" />
+                    </svg>
+                  </div>
+                  <h5 className="font-sans text-xs font-bold text-[#461220]">No Refined</h5>
+                  <p className="text-[10px] text-[#70293b]/80">Sugar</p>
+                </div>
+
+                {/* 4. Sourced Responsibly */}
+                <div className="flex flex-col items-center p-3">
+                  <div className="w-14 h-14 rounded-full border border-[#461220]/25 bg-white/60 flex items-center justify-center text-[#461220] mb-2.5 shadow-sm">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#461220" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a10 10 0 0 1 10 10c0 5.523-4.477 10-10 10S2 17.523 2 12A10 10 0 0 1 12 2z" />
+                      <path d="M12 6v12" />
+                      <path d="M8 10l4-4 4 4" />
+                    </svg>
+                  </div>
+                  <h5 className="font-sans text-xs font-bold text-[#461220]">Sourced</h5>
+                  <p className="text-[10px] text-[#70293b]/80">Responsibly</p>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* =================================================================== */}
+      {/* 6. "A LITTLE SWEETNESS ON INSTAGRAM" (Reference Image)               */}
+      {/* =================================================================== */}
+      <ExpandableGallery />
+
+      {/* =================================================================== */}
+      {/* 7. "LET'S STAY IN TOUCH" NEWSLETTER BANNER (Reference Image)        */}
+      {/* =================================================================== */}
+      <section className="relative bg-[#fff9fa] py-14 sm:py-20 px-4 sm:px-10 lg:px-16 overflow-hidden">
+        <div className="max-w-4xl mx-auto">
+          
+          <div className="relative rounded-3xl bg-gradient-to-r from-[#fae7ed] via-[#fae6ec] to-[#f8dce5] border border-[#eed3db] p-8 sm:p-12 text-center shadow-[0_12px_36px_rgba(70,18,32,0.06)] overflow-hidden">
+            
+            {/* Background floral accents */}
+            <div className="absolute -left-6 -bottom-6 w-28 h-28 rounded-full bg-white/30 blur-xl pointer-events-none" />
+            <div className="absolute -right-6 -top-6 w-28 h-28 rounded-full bg-white/30 blur-xl pointer-events-none" />
+
+            <div className="relative z-10 max-w-lg mx-auto space-y-4">
+              <h2 className="font-display text-3xl sm:text-4xl font-semibold text-[#461220]">
+                Let’s stay in touch
+              </h2>
+              
+              <p className="text-xs sm:text-sm text-[#70293b] leading-relaxed">
+                Be the first to know about new bakes, offers and sweet surprises.
+              </p>
+
+              {/* Form */}
+              <form onSubmit={handleNewsletterSubmit} className="pt-2 flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
+                <input
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="Enter your email"
+                  required
+                  className="flex-1 px-5 py-3 rounded-full bg-white border border-[#eed3db] text-xs sm:text-sm text-[#461220] placeholder:text-[#70293b]/60 outline-none focus:border-[#461220] transition-colors"
+                />
+                <button
+                  type="submit"
+                  className="bg-[#461220] hover:bg-[#340d18] text-white px-6 py-3 rounded-full text-xs sm:text-sm font-semibold flex items-center justify-center gap-1.5 shadow-md active:scale-95 transition-all"
+                >
+                  <span>{subscribed ? "Subscribed!" : "Subscribe"}</span>
+                  {subscribed ? <Check className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
+                </button>
+              </form>
+
+              {/* Spam note */}
+              <p className="text-[11px] text-[#70293b]/80 flex items-center justify-center gap-1.5 pt-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#461220]" />
+                <span>No spam. Only sweetness.</span>
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      {/* =================================================================== */}
+      {/* 8. UNIFIED FOOTER (Reference Image)                                 */}
+      {/* =================================================================== */}
+      <footer className="bg-[#fff9fa] border-t border-[#461220]/12 pt-16 pb-12 px-6 sm:px-12 lg:px-20 text-[#461220]">
+        <div className="max-w-7xl mx-auto grid gap-10 sm:grid-cols-2 lg:grid-cols-12 pb-12 border-b border-[#461220]/10">
+          
+          {/* Column 1: Brand Wordmark & Socials */}
+          <div className="lg:col-span-4 space-y-4">
+            <Link to="/" className="inline-block">
+              <CakeStylesLogo className="h-7 sm:h-8 w-auto text-[#9D182B]" />
+            </Link>
+            <p className="text-xs sm:text-sm text-[#70293b] max-w-xs leading-relaxed">
+              Baked with love. Crafted with passion. Delivered to make moments sweeter.
+            </p>
+
+            {/* Social Icons */}
+            <div className="flex items-center gap-2.5 pt-2">
+              <a
+                href="https://instagram.com"
+                target="_blank"
+                rel="noreferrer"
+                className="w-9 h-9 rounded-full border border-[#461220]/25 flex items-center justify-center text-[#461220] hover:bg-[#eed3db]/40 transition-colors"
+                aria-label="Instagram"
+              >
+                <Instagram className="w-4 h-4" />
+              </a>
+              <a
+                href="https://facebook.com"
+                target="_blank"
+                rel="noreferrer"
+                className="w-9 h-9 rounded-full border border-[#461220]/25 flex items-center justify-center text-[#461220] hover:bg-[#eed3db]/40 transition-colors"
+                aria-label="Facebook"
+              >
+                <Facebook className="w-4 h-4" />
+              </a>
+              <a
+                href="https://wa.me"
+                target="_blank"
+                rel="noreferrer"
+                className="w-9 h-9 rounded-full border border-[#461220]/25 flex items-center justify-center text-[#461220] hover:bg-[#eed3db]/40 transition-colors"
+                aria-label="WhatsApp"
+              >
+                <WhatsApp className="w-4 h-4" />
+              </a>
+            </div>
+          </div>
+
+          {/* Column 2: Shop Links */}
+          <div className="lg:col-span-2 space-y-3">
+            <h4 className="font-sans text-xs font-bold uppercase tracking-wider text-[#461220]">Shop</h4>
+            <ul className="space-y-2 text-xs text-[#70293b]">
+              <li><Link to="/menu" className="hover:text-[#461220] transition-colors">Cakes</Link></li>
+              <li><Link to="/menu" className="hover:text-[#461220] transition-colors">Pastries</Link></li>
+              <li><Link to="/custom-cakes" className="hover:text-[#461220] transition-colors">Custom Cakes</Link></li>
+              <li><Link to="/menu" className="hover:text-[#461220] transition-colors">Combos & Boxes</Link></li>
+            </ul>
+          </div>
+
+          {/* Column 3: Help Links */}
+          <div className="lg:col-span-2 space-y-3">
+            <h4 className="font-sans text-xs font-bold uppercase tracking-wider text-[#461220]">Help</h4>
+            <ul className="space-y-2 text-xs text-[#70293b]">
+              <li><Link to="/contact" className="hover:text-[#461220] transition-colors">FAQs</Link></li>
+              <li><Link to="/track" className="hover:text-[#461220] transition-colors">Delivery Info</Link></li>
+              <li><Link to="/contact" className="hover:text-[#461220] transition-colors">Returns</Link></li>
+              <li><Link to="/contact" className="hover:text-[#461220] transition-colors">Contact Us</Link></li>
+            </ul>
+          </div>
+
+          {/* Column 4: Company Links */}
+          <div className="lg:col-span-2 space-y-3">
+            <h4 className="font-sans text-xs font-bold uppercase tracking-wider text-[#461220]">Company</h4>
+            <ul className="space-y-2 text-xs text-[#70293b]">
+              <li><Link to="/about" className="hover:text-[#461220] transition-colors">Our Story</Link></li>
+              <li><Link to="/about" className="hover:text-[#461220] transition-colors">Blog</Link></li>
+              <li><Link to="/about" className="hover:text-[#461220] transition-colors">Careers</Link></li>
+              <li><Link to="/contact" className="hover:text-[#461220] transition-colors">Locations</Link></li>
+            </ul>
+          </div>
+
+          {/* Column 5: Contact Details */}
+          <div className="lg:col-span-2 space-y-3">
+            <h4 className="font-sans text-xs font-bold uppercase tracking-wider text-[#461220]">Contact</h4>
+            <div className="space-y-2 text-xs text-[#70293b]">
+              <p className="flex items-center gap-2">
+                <Phone className="w-3.5 h-3.5 text-[#c88242] shrink-0" />
+                <a href="tel:+919876543210" className="hover:text-[#461220] transition-colors">+91 98765 43210</a>
+              </p>
+              <p className="flex items-center gap-2">
+                <Mail className="w-3.5 h-3.5 text-[#c88242] shrink-0" />
+                <a href="mailto:hello@cakestyles.com" className="hover:text-[#461220] transition-colors">hello@cakestyles.com</a>
+              </p>
+              <p className="flex items-start gap-2">
+                <MapPin className="w-3.5 h-3.5 text-[#c88242] shrink-0 mt-0.5" />
+                <a
+                  href="https://maps.app.goo.gl/F3eNhZa6Vgb3o128A"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-[#461220] hover:underline transition-colors"
+                >
+                  83/1/2, Sambhunath Pandit St, Bhowanipore, Kolkata 700020
+                </a>
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+        {/* Bottom Sub-Footer */}
+        <div className="max-w-7xl mx-auto pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#70293b]/70">
+          <p>© 2026 Cakestyles. All rights reserved.</p>
+          <div className="flex items-center gap-6">
+            <Link to="/about" className="hover:underline">Privacy Policy</Link>
+            <span>|</span>
+            <Link to="/about" className="hover:underline">Terms & Conditions</Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

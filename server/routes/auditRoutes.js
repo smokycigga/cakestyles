@@ -19,3 +19,4 @@ router.get("/", protect, requirePerm("audit:read"), async (req, res) => {
 });
 
 export default router;
+

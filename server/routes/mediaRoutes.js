@@ -7,3 +7,4 @@ router.post("/", upload);
 router.get("/:id", serve);
 
 export default router;
+

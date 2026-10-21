@@ -46,3 +46,4 @@ export const updateSettings = [protect, requirePerm("settings:write"), async (re
 
   res.json({ settings: s });
 }];
+

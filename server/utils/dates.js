@@ -61,6 +61,11 @@ export const resolveRange = (query = {}) => {
     }
     case "this_quarter":
       return { from: startOfIstDay(startOfQuarter()), to: endOfIstDay(today) };
+    // No lower bound. Added for the customer statement, where "all of this
+    // customer's history" is the useful default — the 30-day window silently
+    // cut off everything older.
+    case "all":
+      return { from: new Date(0), to: endOfIstDay(today) };
     default:
       if (query.from && query.to) {
         return { from: startOfIstDay(query.from), to: endOfIstDay(query.to) };
@@ -68,3 +73,4 @@ export const resolveRange = (query = {}) => {
       return { from: startOfIstDay(addDaysIst(today, -29)), to: endOfIstDay(today) };
   }
 };
+

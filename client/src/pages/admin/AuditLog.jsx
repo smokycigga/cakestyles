@@ -63,11 +63,11 @@ export default function AuditLog() {
           <tbody>
             {logs.map((log) => (
               <tr key={log._id} className="hover:bg-wine-50/50">
-                <Td className="text-xs text-cocoa-400 whitespace-nowrap">{fmtDateTime(log.createdAt)}</Td>
-                <Td className="text-sm font-medium">{log.actor?.name || "system"}</Td>
-                <Td><Badge className="bg-wine-50 text-wine-700">{log.action}</Badge></Td>
-                <Td className="text-xs text-cocoa-500">{log.entity}</Td>
-                <Td className="text-xs text-cocoa-500 max-w-md">
+                <Td className="text-xs text-cocoa-400 whitespace-nowrap" label="When">{fmtDateTime(log.createdAt)}</Td>
+                <Td className="text-sm font-medium" label="Actor">{log.actor?.name || "system"}</Td>
+                <Td label="Action"><Badge className="bg-wine-50 text-wine-700">{log.action}</Badge></Td>
+                <Td className="text-xs text-cocoa-500" label="Entity">{log.entity}</Td>
+                <Td className="text-xs text-cocoa-500 max-w-md" label="Changes">
                   {diff(log.changes) || log.meta || "—"}
                 </Td>
               </tr>

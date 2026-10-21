@@ -53,8 +53,71 @@ export const computeInvoiceTotals = ({ lines, taxRate = 0, taxLabel = "Tax", dis
   return { lines: computed, subtotal, discount: discountAmount, tax: { rate: taxRate, label: taxLabel, amount: taxTotal }, total };
 };
 
+/**
+ * Invoice lines for an order. Add-ons are folded into the unit price so that
+ * `amount = unitPrice x quantity` still reproduces the order's line total —
+ * recomputing from the bare unitPrice silently dropped every add-on charge.
+ */
+export const invoiceLinesFromOrder = (order) => {
+  const lines = (order.items || []).map((item) => {
+    const addOns = item.addOns || [];
+    const addOnSum = addOns.reduce((sum, a) => sum + (Number(a.price) || 0), 0);
+    const qualifiers = [item.variantName, ...addOns.map((a) => a.name)].filter(Boolean);
+    return {
+      ...(item.product ? { product: item.product } : {}),
+      description: qualifiers.length ? `${item.name} (${qualifiers.join(", ")})` : item.name,
+      quantity: item.quantity,
+      unitPrice: round2(Number(item.unitPrice) + addOnSum),
+      isCustom: Boolean(item.isCustom),
+    };
+  });
+
+  if (order.deliveryFee > 0) {
+    lines.push({
+      description: "Delivery",
+      quantity: 1,
+      unitPrice: round2(order.deliveryFee),
+      isCustom: true,
+    });
+  }
+  return lines;
+};
+
+/**
+ * An invoice raised from an order is the same money, re-presented — so its
+ * total is pinned to the order's grandTotal rather than derived again. Deriving
+ * it drifted from the order in four ways: add-ons vanished from the line
+ * amounts, the delivery fee picked up tax the order never charged, the order's
+ * discount was dropped, and tax-inclusive stores were taxed a second time.
+ */
+export const invoiceTotalsFromOrder = (order, taxLabel = "Tax") => {
+  const lines = invoiceLinesFromOrder(order).map((line) => ({
+    ...line,
+    amount: round2(line.unitPrice * line.quantity),
+  }));
+
+  const subtotal = round2(lines.reduce((sum, line) => sum + line.amount, 0));
+  const discount = Math.min(round2(Number(order.discount) || 0), subtotal);
+  const taxAmount = round2(Number(order.taxTotal) || 0);
+  const total = round2(Number(order.grandTotal) || 0);
+
+  // Tax-inclusive stores keep the tax inside the line prices, so the tax row is
+  // informational and must not be added on top a second time. Detected from the
+  // order's own arithmetic, which also covers orders stored before this flag.
+  const inclusive = taxAmount > 0 && Math.abs(round2(subtotal - discount + taxAmount) - total) > 0.005;
+
+  return {
+    lines,
+    subtotal,
+    discount,
+    tax: { rate: Number(order.taxRate) || 0, label: taxLabel, amount: taxAmount, inclusive },
+    total,
+  };
+};
+
 export const paymentStatusFor = (amountDue, amountPaid) => {
   if (amountPaid <= 0) return "pending";
   if (amountPaid >= amountDue - 0.001) return "paid";
   return "partial";
 };
+

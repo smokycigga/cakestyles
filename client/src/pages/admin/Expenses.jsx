@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Download, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
-import api, { errMsg } from "../../lib/api";
+import api, { errMsg, downloadFile } from "../../lib/api";
 import { compressImage } from "../../lib/imageCompress";
 import { inr, fmtDate, todayStr } from "../../lib/format";
 import { EXPENSE_CATEGORIES, PAYMENT_METHOD_LABELS } from "../../lib/meta";
@@ -122,7 +122,14 @@ export default function Expenses() {
         subtitle={summary ? `Total in view: ${inr(summary.total)}` : ""}
         actions={
           <>
-            <Button variant="outline" onClick={() => window.open("/api/expenses/export.csv", "_blank")}>
+            <Button
+              variant="outline"
+              onClick={() =>
+                downloadFile("/expenses/export.csv", "cakestyles-expenses.csv").catch((error) =>
+                  toast.error(errMsg(error)),
+                )
+              }
+            >
               <Download className="w-4 h-4" /> Export CSV
             </Button>
             {can("expenses:write") && (
@@ -174,20 +181,20 @@ export default function Expenses() {
           <tbody>
             {expenses.expenses.map((exp) => (
               <tr key={exp._id} className="hover:bg-wine-50/50">
-                <Td className="text-xs text-cocoa-400 whitespace-nowrap">{fmtDate(exp.date)}</Td>
-                <Td>
+                <Td className="text-xs text-cocoa-400 whitespace-nowrap" label="Date">{fmtDate(exp.date)}</Td>
+                <Td label="Description">
                   <span className="font-medium text-cocoa-800">{exp.description}</span>
                   {exp.recurring?.isRecurring && <Badge className="bg-violet-50 text-violet-600 ml-2">{exp.recurring.frequency}</Badge>}
                   {exp.attachment && (
                     <a href={exp.attachment} target="_blank" rel="noreferrer" className="text-xs text-wine-600 hover:underline ml-2">receipt</a>
                   )}
                 </Td>
-                <Td><Badge className="bg-cream-100 text-cocoa-600">{exp.category}</Badge></Td>
-                <Td className="text-xs text-cocoa-400">{exp.vendor || "—"}</Td>
-                <Td className="text-xs text-cocoa-400">{exp.paymentMethod ? (PAYMENT_METHOD_LABELS[exp.paymentMethod] || exp.paymentMethod) : "—"}</Td>
-                <Td className="font-semibold text-rose-700">-{inr(exp.amount)}</Td>
+                <Td label="Category"><Badge className="bg-cream-100 text-cocoa-600">{exp.category}</Badge></Td>
+                <Td className="text-xs text-cocoa-400" label="Vendor">{exp.vendor || "—"}</Td>
+                <Td className="text-xs text-cocoa-400" label="Method">{exp.paymentMethod ? (PAYMENT_METHOD_LABELS[exp.paymentMethod] || exp.paymentMethod) : "—"}</Td>
+                <Td className="font-semibold text-rose-700" label="Amount">-{inr(exp.amount)}</Td>
                 {can("expenses:write") && (
-                  <Td>
+                  <Td label="Actions">
                     <div className="flex gap-1">
                       <button onClick={() => openEdit(exp)} className="text-xs text-wine-600 hover:underline px-1">Edit</button>
                       <button onClick={() => remove(exp._id)} className="p-1.5 rounded-lg hover:bg-rose-50 text-cocoa-400 hover:text-rose-600" aria-label="Delete">

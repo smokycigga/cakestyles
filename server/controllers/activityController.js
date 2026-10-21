@@ -36,3 +36,4 @@ export const create = [protect, requirePerm("customers:write"), validate(createS
   ]);
   res.status(201).json({ activity });
 }];
+

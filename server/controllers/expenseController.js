@@ -106,3 +106,4 @@ export const exportCsv = [protect, requirePerm("expenses:read"), async (req, res
     { label: "notes", key: "notes" },
   ]);
 }];
+

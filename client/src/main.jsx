@@ -3,6 +3,8 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
 
+import "@fontsource/playfair-display";
+import "@fontsource/great-vibes";
 import "./index.css";
 import App from "./App";
 import { CartProvider } from "./store/CartContext";

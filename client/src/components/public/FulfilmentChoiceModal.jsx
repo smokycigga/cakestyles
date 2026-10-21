@@ -11,28 +11,10 @@ import {
 } from "lucide-react";
 import { useFulfilment } from "../../store/FulfilmentContext";
 import { useSettings } from "../../store/SettingsContext";
+import DeliveryMapPicker from "./DeliveryMapPicker";
 
 const inputClass =
   "mt-1.5 w-full rounded-xl border border-wine-100 bg-white px-4 py-3 text-sm text-cocoa-900 outline-none transition placeholder:text-cocoa-500/50 focus:border-wine-400 focus:ring-2 focus:ring-wine-100";
-
-function MapPlaceholder() {
-  return (
-    <div className="relative h-40 overflow-hidden rounded-2xl border border-wine-100 bg-cream-100" aria-hidden="true">
-      <div className="absolute -left-8 top-8 h-3 w-52 -rotate-12 rounded-full bg-white/90 shadow-sm" />
-      <div className="absolute -right-10 top-20 h-3 w-64 rotate-12 rounded-full bg-white/90 shadow-sm" />
-      <div className="absolute left-1/3 -top-12 h-64 w-3 rotate-6 rounded-full bg-white/90 shadow-sm" />
-      <div className="absolute left-8 top-8 h-14 w-20 rounded-xl border border-blush-200 bg-blush-100/70" />
-      <div className="absolute bottom-5 right-8 h-16 w-24 rounded-xl border border-wine-100 bg-wine-50/80" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0,rgba(255,255,255,0.18)_70%)]" />
-      <div className="absolute left-1/2 top-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-wine-700 text-white shadow-lg shadow-wine-700/25 ring-8 ring-white/70">
-        <MapPin className="h-5 w-5" />
-      </div>
-      <div className="absolute bottom-3 left-3 rounded-full bg-white/90 px-3 py-1.5 text-[10px] font-semibold tracking-wide text-wine-700 shadow-sm backdrop-blur">
-        Delivery location preview
-      </div>
-    </div>
-  );
-}
 
 function ModalContent({ onClose }) {
   const settings = useSettings();
@@ -204,7 +186,9 @@ function ModalContent({ onClose }) {
                 <p className="mt-2 text-sm leading-6 text-cocoa-500">Enter the address where someone can receive your order.</p>
               </div>
 
-              <MapPlaceholder />
+              <DeliveryMapPicker value={address} onChange={(next) => {
+                Object.entries(next).forEach(([field, value]) => updateAddress(field, value));
+              }} />
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <label className="block sm:col-span-2">

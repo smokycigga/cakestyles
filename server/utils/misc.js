@@ -13,3 +13,4 @@ export const normalizePhone = (phone) => {
   if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
   return digits;
 };
+

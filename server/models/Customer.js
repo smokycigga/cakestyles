@@ -39,3 +39,4 @@ const customerSchema = new mongoose.Schema(
 customerSchema.index({ phone: 1 }, { unique: true });
 
 export default mongoose.model("Customer", customerSchema);
+

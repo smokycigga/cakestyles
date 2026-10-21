@@ -18,3 +18,4 @@ export const sendCSV = (res, filename, rows, columns) => {
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send(toCSV(rows, columns));
 };
+

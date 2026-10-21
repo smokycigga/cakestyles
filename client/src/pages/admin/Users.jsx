@@ -62,11 +62,11 @@ export default function Users() {
           <tbody>
             {users.map((u) => (
               <tr key={u._id} className="hover:bg-wine-50/50">
-                <Td>
+                <Td label="User">
                   <div className="font-medium text-cocoa-800">{u.name}</div>
                   <div className="text-xs text-cocoa-400">{u.email}</div>
                 </Td>
-                <Td>
+                <Td label="Role">
                   <select
                     value={u.role}
                     disabled={u.role === "owner"}
@@ -78,13 +78,13 @@ export default function Users() {
                     ))}
                   </select>
                 </Td>
-                <Td>
+                <Td label="Status">
                   <Badge className={u.active ? "bg-emerald-100 text-emerald-800" : "bg-gray-200 text-gray-600"}>
                     {u.active ? "Active" : "Deactivated"}
                   </Badge>
                 </Td>
-                <Td className="text-xs text-cocoa-400">{fmtDate(u.createdAt)}</Td>
-                <Td>
+                <Td className="text-xs text-cocoa-400" label="Joined">{fmtDate(u.createdAt)}</Td>
+                <Td label="Actions">
                   {u.role !== "owner" && (
                     <button
                       onClick={() => updateUser(u._id, { active: !u.active })}

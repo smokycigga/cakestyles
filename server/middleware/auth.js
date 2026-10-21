@@ -26,6 +26,27 @@ export const protect = async (req, res, next) => {
   }
 };
 
+// For routes that are public but widen what they return for a signed-in user
+// (GET /categories?all=1). A missing or bad token is not an error here — the
+// caller is simply treated as anonymous. Verifying the token rather than
+// trusting the presence of the header matters: the previous check was
+// `Boolean(req.headers.authorization)`, so "Bearer nonsense" was enough to
+// read the shop's hidden categories.
+export const optionalProtect = async (req, res, next) => {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+  if (!token) return next();
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+    if (user && user.active) req.user = user;
+  } catch {
+    // Deliberately silent: the request proceeds as anonymous.
+  }
+  next();
+};
+
 // Checks the user's role against the permission matrix.
 export const requirePerm = (perm) => (req, res, next) => {
   const allowed = PERMISSIONS[perm];
@@ -37,3 +58,4 @@ export const requirePerm = (perm) => (req, res, next) => {
   }
   next();
 };
+

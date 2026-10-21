@@ -29,7 +29,9 @@ export default function Checkout() {
     return [...new Set(available)];
   }, [settings]);
   const selectedPayment = methods.includes(paymentMethod) ? paymentMethod : methods[0] || "upi";
-  const deliveryFee = type === "delivery" && settings?.delivery?.enabled && !(settings.delivery.freeOver > 0 && totalPrice >= settings.delivery.freeOver) ? settings.delivery.fee || 0 : 0;
+  const deliveryFee = type === "delivery" && settings?.delivery?.enabled
+    ? Math.ceil(Number(address.distanceKm) || 0) * 18
+    : 0;
   const tax = settings?.tax?.enabled && !settings.tax.inclusive ? (totalPrice * settings.tax.rate) / 100 : 0;
   const total = totalPrice + deliveryFee + tax;
 

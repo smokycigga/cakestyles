@@ -7,6 +7,7 @@ import {
   updateStatus,
   recordPayment,
   createManual,
+  remove,
 } from "../controllers/orderController.js";
 
 const router = express.Router();
@@ -21,5 +22,7 @@ router.get("/:id", getOne);
 router.put("/:id/status", updateStatus);
 router.post("/:id/payments", recordPayment);
 router.post("/manual", createManual);
+router.delete("/:id", remove);
 
 export default router;
+

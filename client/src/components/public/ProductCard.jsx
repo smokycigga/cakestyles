@@ -38,12 +38,16 @@ export default function ProductCard({ product, layout = "grid" }) {
       }`}
     >
       <div className={`relative overflow-hidden ${list ? "h-full min-h-44" : "aspect-square"}`}>
-        <img
-          src={image}
-          alt={product.name}
-          loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-        />
+        {image ? (
+          <img
+            src={image}
+            alt={product.name}
+            loading="lazy"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        ) : (
+          <Placeholder name={product.name} className="h-full w-full transition-transform duration-500 group-hover:scale-105" />
+        )}
         <div className="absolute left-2 top-2 flex flex-wrap gap-1">
           {product.salesRank && (
             <span className="rounded-full bg-wine-800 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white">

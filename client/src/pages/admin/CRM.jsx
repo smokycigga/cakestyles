@@ -92,11 +92,11 @@ export default function CRM() {
               <thead><tr><Th>Customer</Th><Th>Orders</Th><Th>Spend</Th><Th>Last order</Th><Th>Outstanding</Th></tr></thead>
               <tbody>{customers.slice(0, 50).map((customer) => (
                 <tr key={customer._id}>
-                  <Td><Link to={`/admin/customers/${customer._id}`} className="font-medium text-wine-700 hover:underline">{customer.name}</Link><div className="text-xs text-cocoa-400">{customer.phone}</div></Td>
-                  <Td>{customer.orderCount}</Td>
-                  <Td>{inr(customer.totalSpend)}</Td>
-                  <Td className="text-xs text-cocoa-400">{customer.lastOrderAt ? fmtDate(customer.lastOrderAt) : "—"}</Td>
-                  <Td>{customer.outstandingBalance > 0 ? <Badge className="bg-rose-100 text-rose-700">{inr(customer.outstandingBalance)}</Badge> : "—"}</Td>
+                  <Td label="Customer"><Link to={`/admin/customers/${customer._id}`} className="font-medium text-wine-700 hover:underline">{customer.name}</Link><div className="text-xs text-cocoa-400">{customer.phone}</div></Td>
+                  <Td label="Orders">{customer.orderCount}</Td>
+                  <Td label="Spend">{inr(customer.totalSpend)}</Td>
+                  <Td className="text-xs text-cocoa-400" label="Last order">{customer.lastOrderAt ? fmtDate(customer.lastOrderAt) : "—"}</Td>
+                  <Td label="Outstanding">{customer.outstandingBalance > 0 ? <Badge className="bg-rose-100 text-rose-700">{inr(customer.outstandingBalance)}</Badge> : "—"}</Td>
                 </tr>
               ))}</tbody>
             </TableWrap>

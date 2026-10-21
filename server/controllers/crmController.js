@@ -87,10 +87,16 @@ export const computeCustomerSegments = (customers, orders, invoices, options = {
     if (createdAt && (!stats.firstOrderAt || createdAt < stats.firstOrderAt)) stats.firstOrderAt = createdAt;
     if (createdAt && (!stats.lastOrderAt || createdAt > stats.lastOrderAt)) stats.lastOrderAt = createdAt;
     orderStats.set(key, stats);
+    // A customer's outstanding is what their orders still owe, so this segment
+    // agrees with the customer list instead of only reading invoices.
+    outstanding.set(key, (outstanding.get(key) || 0) + Math.max(0, Number(order.grandTotal || 0) - Number(order.amountPaid || 0)));
   }
 
   for (const invoice of invoices) {
     if (!invoice.customer || !OUTSTANDING_INVOICE_STATUSES.has(invoice.status)) continue;
+    // A linked invoice restates its order's balance, already counted above;
+    // adding it too would double-count a single debt.
+    if (invoice.order) continue;
     const balance = Math.max(0, Number(invoice.balanceDue) || 0);
     const key = idOf(invoice.customer);
     outstanding.set(key, (outstanding.get(key) || 0) + balance);
@@ -142,8 +148,8 @@ export const computeCustomerSegments = (customers, orders, invoices, options = {
 
 const loadCrmData = () => Promise.all([
   Customer.find({ active: { $ne: false } }).lean(),
-  Order.find({}).select("customer status grandTotal createdAt").lean(),
-  Invoice.find({}).select("customer status balanceDue").lean(),
+  Order.find({}).select("customer status grandTotal amountPaid createdAt").lean(),
+  Invoice.find({}).select("customer status balanceDue order").lean(),
 ]);
 
 export const overview = [protect, requirePerm("customers:read"), async (req, res) => {
@@ -200,3 +206,4 @@ export const importantDates = [protect, requirePerm("customers:read"), async (re
   const dates = detectImportantDates(customers, days);
   res.json({ days, dates, count: dates.length });
 }];
+

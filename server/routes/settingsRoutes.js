@@ -8,3 +8,4 @@ router.get("/", getSettings);
 router.put("/", updateSettings);
 
 export default router;
+

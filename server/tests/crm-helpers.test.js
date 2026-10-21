@@ -91,7 +91,15 @@ describe("CRM customer segments", () => {
     expect(segments.new.map((item) => item._id)).toEqual(["vip"]);
     expect(segments.at_risk.map((item) => item._id)).toEqual(["risk"]);
     expect(segments.dormant.map((item) => item._id)).toEqual(["dormant", "never"]);
-    expect(segments.outstanding[0].outstandingBalance).toBe(250);
+    // Outstanding now reflects order balances too, so a customer with an unpaid
+    // order (or a standalone invoice) shows up in this segment. No order carries
+    // amountPaid here, so each order's full grandTotal is counted once.
+    expect(segments.outstanding.map((i) => [i._id, i.outstandingBalance])).toEqual([
+      ["vip", 11000],
+      ["dormant", 800],
+      ["risk", 750],
+    ]);
     expect(segments.birthday_upcoming.map((item) => item._id)).toEqual(["vip"]);
   });
 });
+

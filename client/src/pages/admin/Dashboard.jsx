@@ -205,13 +205,13 @@ export default function AdminDashboard() {
               <tbody>
                 {data.recentOrders.map((o) => (
                   <tr key={o.orderNumber} className="hover:bg-wine-50/50">
-                    <Td>
+                    <Td label="Order">
                       <Link to={`/admin/orders/${o._id}`} className="font-medium text-wine-700 hover:underline">{o.orderNumber}</Link>
                     </Td>
-                    <Td>{o.customer}</Td>
-                    <Td className="text-cocoa-500">{SOURCE_LABELS[o.source] || o.source}</Td>
-                    <Td className="font-medium">{inr(o.total)}</Td>
-                    <Td>
+                    <Td label="Customer">{o.customer}</Td>
+                    <Td className="text-cocoa-500" label="Channel">{SOURCE_LABELS[o.source] || o.source}</Td>
+                    <Td className="font-medium" label="Total">{inr(o.total)}</Td>
+                    <Td label="Status">
                       <Badge className={ORDER_STATUS_META[o.status]?.color}>{ORDER_STATUS_META[o.status]?.label || o.status}</Badge>
                     </Td>
                   </tr>

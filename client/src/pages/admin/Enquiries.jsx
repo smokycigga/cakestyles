@@ -5,6 +5,8 @@ import toast from "react-hot-toast";
 import api, { errMsg } from "../../lib/api";
 import { inr, fmtDate, daysFromNow } from "../../lib/format";
 import { ENQUIRY_STATUS_META } from "../../lib/meta";
+import { orderTotalsPreview } from "../../lib/invoiceTotals";
+import { useSettings } from "../../store/SettingsContext";
 import { PageHeader, Spinner, Badge, Button, Field, inputCls, Modal, EmptyState } from "../../components/admin/ui";
 
 const PIPELINE = ["new", "contacted", "quote_sent", "awaiting_confirmation", "confirmed", "completed", "lost"];
@@ -16,6 +18,17 @@ export default function Enquiries() {
   const [convert, setConvert] = useState({ amount: "", type: "pickup", date: daysFromNow(7), depositAmount: "", depositMethod: "upi", balanceDueDate: "" });
   const [createOpen, setCreateOpen] = useState(false);
   const [newEnq, setNewEnq] = useState({ name: "", phone: "", eventDate: daysFromNow(7), guestCount: "", size: "", flavours: "", designNotes: "", budgetRange: "", source: "instagram" });
+  const settings = useSettings();
+
+  // The modal asks for one figure and the server turns it into a taxed order, so
+  // without this staff quote ₹5,000 and both the order and its invoice read
+  // ₹5,250. Same helper the manual-order screen quotes from.
+  const tax = settings?.tax || {};
+  const quote = orderTotalsPreview({
+    subtotal: convert.amount,
+    taxRate: tax.enabled ? tax.rate : 0,
+    taxInclusive: tax.inclusive,
+  });
 
   const load = () => api.get("/enquiries").then((r) => setEnquiries(r.data.enquiries)).catch(() => setEnquiries([]));
   useEffect(() => {
@@ -180,6 +193,25 @@ export default function Enquiries() {
           <Field label="Quoted amount (₹) *">
             <input type="number" min="1" step="0.01" value={convert.amount} onChange={(e) => setConvert({ ...convert, amount: e.target.value })} className={inputCls} required autoFocus />
           </Field>
+
+          {quote.subtotal > 0 && (
+            <div className="rounded-xl bg-cream-100 border border-wine-100 px-3 py-2.5 space-y-1">
+              <div className="flex justify-between text-xs text-cocoa-500">
+                <span>Quoted</span>
+                <span>{inr(quote.subtotal)}</span>
+              </div>
+              {quote.taxTotal > 0 && (
+                <div className="flex justify-between text-xs text-cocoa-500">
+                  <span>{tax.label || "Tax"} ({quote.taxRate}%){tax.inclusive ? " incl." : ""}</span>
+                  <span>{inr(quote.taxTotal)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm pt-1 border-t border-wine-100">
+                <span className="text-cocoa-500">Order total</span>
+                <span className="font-semibold text-wine-700">{inr(quote.grandTotal)}</span>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Fulfilment">
               <select value={convert.type} onChange={(e) => setConvert({ ...convert, type: e.target.value })} className={inputCls}>

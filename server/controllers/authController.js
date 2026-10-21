@@ -73,3 +73,4 @@ export const changePassword = [protect, validate(changePasswordSchema), async (r
   await user.save();
   res.json({ message: "Password updated" });
 }];
+

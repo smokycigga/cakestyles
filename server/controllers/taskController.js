@@ -118,3 +118,4 @@ export const complete = [protect, requirePerm("customers:write"), async (req, re
   }, { path: "completedBy", select: "name" }]);
   res.json({ task });
 }];
+

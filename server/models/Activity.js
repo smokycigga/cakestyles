@@ -22,3 +22,4 @@ activitySchema.index({ customer: 1, occurredAt: -1 });
 activitySchema.index({ nextFollowUpAt: 1 });
 
 export default mongoose.model("Activity", activitySchema);
+

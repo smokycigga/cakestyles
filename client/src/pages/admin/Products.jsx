@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Upload, Download, Copy, Archive, Search } from "lucide-react";
+import { Plus, Upload, Download, Copy, Archive, Search, LayoutGrid } from "lucide-react";
 import toast from "react-hot-toast";
-import api, { errMsg } from "../../lib/api";
+import api, { errMsg, downloadFile } from "../../lib/api";
 import { inr, fmtDate } from "../../lib/format";
 import { PageHeader, Spinner, Badge, Th, Td, TableWrap, EmptyState, Button, inputCls, Modal, Field } from "../../components/admin/ui";
 import { useAuth } from "../../store/AuthContext";
@@ -32,10 +32,14 @@ export default function Products() {
   const fileRef = useRef(null);
 
   const load = () => api.get("/products/admin", { params: search ? { search } : {} }).then((r) => setProducts(r.data.products));
+
+  // Debounce on the search state itself. Calling setTimeout(load, 200) from
+  // onChange captured a stale closure and lagged one keystroke behind.
   useEffect(() => {
-    load();
+    const timer = setTimeout(load, 200);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [search]);
 
   const toggle = (id) =>
     setSelected((prev) => {
@@ -111,7 +115,8 @@ export default function Products() {
     }
   };
 
-  const download = (path) => window.open(`/api${path}`, "_blank");
+  const download = (path, filename) =>
+    downloadFile(path, filename).catch((error) => toast.error(errMsg(error)));
 
   return (
     <div>
@@ -119,21 +124,26 @@ export default function Products() {
         title="Products"
         subtitle={products ? `${products.length} product(s)` : ""}
         actions={
-          can("catalog:write") && (
-            <>
-              <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="w-4 h-4" /> Import CSV</Button>
-              <Button variant="outline" onClick={() => download("/products/export.csv")}><Download className="w-4 h-4" /> Export</Button>
-              <Link to="/admin/products/new" className="inline-flex items-center gap-1.5 bg-wine-700 hover:bg-wine-800 text-white font-medium text-sm px-4 py-2 rounded-xl transition-colors">
-                <Plus className="w-4 h-4" /> Add Product
-              </Link>
-            </>
-          )
+          <>
+            <Link to="/admin/menu" className="inline-flex items-center gap-1.5 border border-wine-100 bg-white hover:border-wine-300 text-cocoa-700 font-medium text-sm px-4 py-2 rounded-xl transition-colors">
+              <LayoutGrid className="w-4 h-4" /> Menu & categories
+            </Link>
+            {can("catalog:write") && (
+              <>
+                <Button variant="outline" onClick={() => setImportOpen(true)}><Upload className="w-4 h-4" /> Import CSV</Button>
+                <Button variant="outline" onClick={() => download("/products/export.csv", "cakestyles-products.csv")}><Download className="w-4 h-4" /> Export</Button>
+                <Link to="/admin/products/new" className="inline-flex items-center gap-1.5 bg-wine-700 hover:bg-wine-800 text-white font-medium text-sm px-4 py-2 rounded-xl transition-colors">
+                  <Plus className="w-4 h-4" /> Add Product
+                </Link>
+              </>
+            )}
+          </>
         }
       />
 
       <div className="relative mb-5 max-w-sm">
         <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-cocoa-400" />
-        <input value={search} onChange={(e) => { setSearch(e.target.value); setTimeout(load, 200); }} placeholder="Search name or SKU…" className={`${inputCls} pl-10`} />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or SKU…" className={`${inputCls} pl-10`} />
       </div>
 
       {selected.size > 0 && can("catalog:write") && (
@@ -148,7 +158,7 @@ export default function Products() {
         <Spinner />
       ) : products.length === 0 ? (
         <div className="bg-white rounded-2xl border border-wine-100">
-          <EmptyState title="No products yet" hint="Add your first product or import a CSV." />
+          <EmptyState title="No products yet" hint="Add a product and you can create its category right on that form." />
         </div>
       ) : (
         <TableWrap>
@@ -172,7 +182,7 @@ export default function Products() {
                 {can("catalog:write") && (
                   <Td><input type="checkbox" checked={selected.has(p._id)} onChange={() => toggle(p._id)} className="accent-wine-600" /></Td>
                 )}
-                <Td>
+                <Td label="Product">
                   {can("catalog:write") ? (
                     <Link to={`/admin/products/${p._id}`} className="font-medium text-cocoa-800 hover:text-wine-700 hover:underline">{p.name}</Link>
                   ) : (
@@ -180,16 +190,16 @@ export default function Products() {
                   )}
                   {p.sku && <div className="text-xs text-cocoa-400">{p.sku}</div>}
                 </Td>
-                <Td className="text-cocoa-500 text-xs">{p.category?.name}</Td>
-                <Td className="font-medium">
+                <Td className="text-cocoa-500 text-xs" label="Category">{p.category?.name}</Td>
+                <Td className="font-medium" label="Price">
                   {inr(p.basePrice)}
                   {p.variants?.length > 0 && <span className="text-xs text-cocoa-400 ml-1">+{p.variants.length} var.</span>}
                 </Td>
-                <Td><Badge className={STATUS_META[p.status]}>{p.status}</Badge></Td>
-                <Td><Badge className={AVAIL_META[p.availability]}>{p.availability.replace("_", " ")}</Badge></Td>
-                <Td className="text-xs text-cocoa-400">{fmtDate(p.updatedAt)}</Td>
+                <Td label="Status"><Badge className={STATUS_META[p.status]}>{p.status}</Badge></Td>
+                <Td label="Availability"><Badge className={AVAIL_META[p.availability]}>{p.availability.replace("_", " ")}</Badge></Td>
+                <Td className="text-xs text-cocoa-400" label="Updated">{fmtDate(p.updatedAt)}</Td>
                 {can("catalog:write") && (
-                  <Td>
+                  <Td label="Actions">
                     <div className="flex gap-1">
                       <button onClick={() => duplicate(p._id)} title="Duplicate" className="p-1.5 rounded-lg hover:bg-wine-50 text-cocoa-400 hover:text-wine-600">
                         <Copy className="w-4 h-4" />

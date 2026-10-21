@@ -77,3 +77,4 @@ export const validateRedemption = ({ points, balance, minRedeem, enabled = true 
   if (points > balance) return "Insufficient loyalty points";
   return null;
 };
+
