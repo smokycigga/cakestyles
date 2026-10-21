@@ -73,6 +73,15 @@ export default function ProductForm() {
     setForm((f) => ({ ...f, [k]: v }));
   };
 
+  // Variants and add-ons are edited in place. They used to render as read-only
+  // text with only a delete button, so changing a price meant deleting the row
+  // and retyping it — which is exactly what the shop was doing.
+  const setRowField = (listKey, index, field, value) =>
+    setForm((f) => ({
+      ...f,
+      [listKey]: f[listKey].map((row, i) => (i === index ? { ...row, [field]: value } : row)),
+    }));
+
   // A store with no categories yet had no way forward from this screen: the
   // select was empty and Category is required, so the product could never be
   // saved. Choosing "Add new category…" creates one here and selects it.
@@ -121,6 +130,17 @@ export default function ProductForm() {
     }
     if (Number(form.basePrice) < 0 || form.basePrice === "") {
       return toast.error("Enter a valid base price");
+    }
+
+    // The rows are editable now, so an emptied field is reachable. Without this
+    // a cleared price would be saved as ₹0 and a cleared name as a blank size.
+    const blankRow = [
+      ...form.variants.map((v) => ({ kind: "size", name: v.name, price: v.price })),
+      ...form.addOns.map((a) => ({ kind: "add-on", name: a.name, price: a.price })),
+    ].find((row) => !String(row.name || "").trim() || row.price === "" || row.price == null);
+
+    if (blankRow) {
+      return toast.error(`Every ${blankRow.kind} needs a name and a price`);
     }
 
     const body = {
@@ -236,13 +256,41 @@ export default function ProductForm() {
             <h3 className="text-sm font-semibold text-cocoa-900 mb-3">Variants / sizes</h3>
             <div className="space-y-2 mb-3">
               {form.variants.map((v, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
-                  <span className="flex-1 bg-cream-50 rounded-lg px-3 py-1.5">{v.name}</span>
-                  <span className="w-20 bg-cream-50 rounded-lg px-3 py-1.5">₹{v.price}</span>
-                  {v.b2bPrice != null && v.b2bPrice !== "" && (
-                    <span className="w-24 bg-indigo-50 rounded-lg px-3 py-1.5 text-indigo-700" title="B2B wholesale price">B2B ₹{v.b2bPrice}</span>
-                  )}
-                  <button type="button" onClick={() => setForm((f) => ({ ...f, variants: f.variants.filter((_, idx) => idx !== i) }))} className="p-1 text-cocoa-400 hover:text-rose-600">
+                <div key={i} className="flex flex-wrap items-center gap-2">
+                  <input
+                    value={v.name}
+                    onChange={(e) => setRowField("variants", i, "name", e.target.value)}
+                    placeholder="e.g. 1 kg"
+                    aria-label={`Size ${i + 1} name`}
+                    className={`${inputCls} flex-1 min-w-[8rem]`}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={v.price}
+                    onChange={(e) => setRowField("variants", i, "price", e.target.value)}
+                    placeholder="₹ Retail"
+                    aria-label={`Size ${i + 1} retail price`}
+                    className={`${inputCls} w-24`}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={v.b2bPrice ?? ""}
+                    onChange={(e) => setRowField("variants", i, "b2bPrice", e.target.value)}
+                    placeholder="₹ B2B"
+                    title="B2B wholesale price (optional)"
+                    aria-label={`Size ${i + 1} B2B price`}
+                    className={`${inputCls} w-24`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, variants: f.variants.filter((_, idx) => idx !== i) }))}
+                    className="p-1.5 text-cocoa-400 hover:text-rose-600 shrink-0"
+                    aria-label={`Remove size ${v.name || i + 1}`}
+                  >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -270,10 +318,30 @@ export default function ProductForm() {
             <h3 className="text-sm font-semibold text-cocoa-900 mb-3">Add-ons</h3>
             <div className="space-y-2 mb-3">
               {form.addOns.map((a, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
-                  <span className="flex-1 bg-cream-50 rounded-lg px-3 py-1.5">{a.name}</span>
-                  <span className="w-20 bg-cream-50 rounded-lg px-3 py-1.5">₹{a.price}</span>
-                  <button type="button" onClick={() => setForm((f) => ({ ...f, addOns: f.addOns.filter((_, idx) => idx !== i) }))} className="p-1 text-cocoa-400 hover:text-rose-600">
+                <div key={i} className="flex flex-wrap items-center gap-2">
+                  <input
+                    value={a.name}
+                    onChange={(e) => setRowField("addOns", i, "name", e.target.value)}
+                    placeholder="e.g. candles"
+                    aria-label={`Add-on ${i + 1} name`}
+                    className={`${inputCls} flex-1 min-w-[8rem]`}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={a.price}
+                    onChange={(e) => setRowField("addOns", i, "price", e.target.value)}
+                    placeholder="₹"
+                    aria-label={`Add-on ${i + 1} price`}
+                    className={`${inputCls} w-24`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, addOns: f.addOns.filter((_, idx) => idx !== i) }))}
+                    className="p-1.5 text-cocoa-400 hover:text-rose-600 shrink-0"
+                    aria-label={`Remove add-on ${a.name || i + 1}`}
+                  >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
