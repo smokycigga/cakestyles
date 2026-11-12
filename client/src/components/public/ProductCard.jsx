@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { inr } from "../../lib/format";
-import { productImage } from "../../lib/productImage";
+import { productImage, imageSrcSet } from "../../lib/productImage";
 
 const TAG_STYLES = {
   bestseller: "bg-wine-700 text-white",
@@ -41,8 +41,14 @@ export default function ProductCard({ product, layout = "grid" }) {
         {image ? (
           <img
             src={image}
+            srcSet={imageSrcSet(image)}
+            // Matches the real layout so the browser picks the smallest file
+            // that still looks sharp: a two-up grid on phones, three-up on
+            // desktop, and a fixed-height thumbnail in list view.
+            sizes={list ? "(min-width: 768px) 320px, 45vw" : "(min-width: 1024px) 320px, (min-width: 640px) 45vw, 90vw"}
             alt={product.name}
             loading="lazy"
+            decoding="async"
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
         ) : (

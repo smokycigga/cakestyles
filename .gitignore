@@ -34,3 +34,8 @@ lerna-debug.log*
 .workbuddy-ai/
 .commandcode/
 .freebuff/
+.env*
+!.env.example
+
+# Local verification artefacts (screenshots, probes)
+.tmp-check/

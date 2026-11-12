@@ -22,7 +22,7 @@ useMemoryDatabase();
 
 // A route count is recorded so that mounting a new one trips a test and gets a
 // human to look at whether it should be public.
-const MOUNTED_ROUTE_COUNT = 99;
+const MOUNTED_ROUTE_COUNT = 101;
 
 // Deliberately reachable without a token: the storefront and the login form.
 const PUBLIC_ROUTES = [

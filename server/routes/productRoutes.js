@@ -12,12 +12,15 @@ import {
   exportCsv,
   importCsv,
 } from "../controllers/productController.js";
+import { publicCache } from "../middleware/publicCache.js";
 
 const router = express.Router();
 
-// Public menu endpoints
-router.get("/", listPublic);
-router.get("/slug/:slug", getPublic);
+// Public menu endpoints. These are the two hottest reads on the site, so they
+// are held at the edge for half a minute — long enough to absorb traffic, short
+// enough that a catalogue edit still shows up almost immediately.
+router.get("/", publicCache(30), listPublic);
+router.get("/slug/:slug", publicCache(30), getPublic);
 
 // Admin CMS endpoints
 router.get("/admin", listAdmin);

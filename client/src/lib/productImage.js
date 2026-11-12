@@ -88,3 +88,42 @@ export const productImage = (product) => {
 export const getProductImage = productImage;
 export default productImage;
 
+// --- Responsive delivery -----------------------------------------------------
+//
+// Product photos now live on Cloudinary, which can resize on request. A card
+// that renders at ~400px was downloading the full-size original, so a menu of
+// ten products pulled well over a megabyte. Asking for the width the layout
+// actually needs cuts each image by roughly 4-5x.
+//
+// Only Cloudinary URLs can be resized this way; anything else (bundled
+// /images/*.webp, a data URI, an externally hosted photo) is returned untouched
+// so callers can safely pass whatever `productImage` gave them.
+
+// Matches one transform segment, e.g. "f_auto,q_auto,c_limit" or "w_400".
+const TRANSFORM_SEGMENT = /^[a-z]{1,3}_[^/]+(?:,[a-z]{1,3}_[^/]+)*$/;
+
+export const sizedImage = (url, width) => {
+  if (typeof url !== "string" || !width || !url.includes("res.cloudinary.com")) return url;
+
+  const marker = "/image/upload/";
+  const at = url.indexOf(marker);
+  if (at === -1) return url;
+
+  const base = url.slice(0, at + marker.length);
+  const segments = url.slice(at + marker.length).split("/");
+
+  // Drop whatever transform segment is already there so widths never stack up.
+  if (segments.length > 1 && TRANSFORM_SEGMENT.test(segments[0])) segments.shift();
+
+  return `${base}f_auto,q_auto,c_limit,w_${Math.round(width)}/${segments.join("/")}`;
+};
+
+// Widths offered to the browser. `c_limit` never upscales, so a small original
+// simply serves its own size at every step — no wasted bytes either way.
+const SRCSET_WIDTHS = [200, 400, 600, 900];
+
+export const imageSrcSet = (url, widths = SRCSET_WIDTHS) => {
+  if (typeof url !== "string" || !url.includes("res.cloudinary.com")) return undefined;
+  return widths.map((w) => `${sizedImage(url, w)} ${w}w`).join(", ");
+};
+

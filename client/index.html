@@ -16,10 +16,15 @@
       rel="stylesheet"
     />
     <title>Cakestyles — Handcrafted Cakes & Bakes</title>
+    <!-- The hero poster is the largest thing painted on the first screen, so it
+         is fetched alongside the stylesheet rather than after the JS parses. -->
+    <link rel="preload" as="image" type="image/webp" href="/images/gallery/hero-poster.webp" fetchpriority="high" />
   </head>
   <body>
     <div id="root"></div>
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+    <!-- Razorpay's checkout script used to be a blocking <script> here, which
+         cost every visitor a third-party DNS lookup and download even though
+         only the checkout page ever needs it. It is loaded on demand now. -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

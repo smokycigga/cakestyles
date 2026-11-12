@@ -4,7 +4,7 @@ import { Minus, Plus, ShoppingCart, ArrowLeft, Clock3, Store, Truck } from "luci
 import toast from "react-hot-toast";
 import api from "../lib/api";
 import { inr } from "../lib/format";
-import { productImage } from "../lib/productImage";
+import { productImage, imageSrcSet } from "../lib/productImage";
 import { useCart } from "../store/CartContext";
 import { useFulfilment } from "../store/FulfilmentContext";
 import SlotPicker from "../components/public/SlotPicker";
@@ -92,7 +92,15 @@ export default function ProductDetail() {
       </div>
 
       {image ? (
-        <img src={image} alt={product.name} className="aspect-square w-full rounded-3xl object-cover shadow-xl shadow-wine-900/10" />
+        <img
+          src={image}
+          srcSet={imageSrcSet(image, [400, 600, 900, 1200])}
+          sizes="(min-width: 640px) 576px, 100vw"
+          alt={product.name}
+          fetchPriority="high"
+          decoding="async"
+          className="aspect-square w-full rounded-3xl object-cover shadow-xl shadow-wine-900/10"
+        />
       ) : (
         <Placeholder name={product.name} className="aspect-square w-full rounded-3xl shadow-xl shadow-wine-900/10" />
       )}
@@ -135,7 +143,7 @@ export default function ProductDetail() {
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-wine-100 bg-cream-50/95 p-3 backdrop-blur">
         <div className="mx-auto flex max-w-xl gap-3">
-          <div className="flex items-center rounded-xl border border-wine-200 bg-white"><button onClick={() => { setQuantity(Math.max(1, quantity - 1)); setAdded(false); }} className="p-3" aria-label="Decrease"><Minus className="h-4 w-4" /></button><span className="w-8 text-center text-sm font-semibold">{quantity}</span><button onClick={() => { setQuantity(Math.min(99, quantity + 1)); setAdded(false); }} className="p-3" aria-label="Increase"><Plus className="h-4 w-4" /></button></div>
+          <div className="flex items-center rounded-xl border border-wine-200 bg-white"><button onClick={() => { setQuantity(Math.max(1, quantity - 1)); setAdded(false); }} className="p-3" aria-label="Decrease"><Minus className="h-4 w-4" /></button><span className="min-w-10 px-1 text-center text-sm font-semibold">{quantity}</span><button onClick={() => { setQuantity(quantity + 1); setAdded(false); }} className="p-3" aria-label="Increase"><Plus className="h-4 w-4" /></button></div>
           <button onClick={handlePrimary} disabled={unavailable} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:bg-cocoa-400">
             <ShoppingCart className="h-4 w-4" /> {unavailable ? "Unavailable" : added ? "Go to cart" : `Add to cart · ${inr(lineTotal)}`}
           </button>

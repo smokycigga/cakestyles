@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Loader2, MapPin, ShoppingBag, Store, Truck } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { errMsg } from "../lib/api";
+import { loadRazorpay } from "../lib/razorpay";
 import { useCart } from "../store/CartContext";
 import { useSettings } from "../store/SettingsContext";
 import { useFulfilment } from "../store/FulfilmentContext";
@@ -58,10 +59,10 @@ export default function Checkout() {
       const order = data.order;
 
       if (selectedPayment === "razorpay") {
-        if (!window.Razorpay) throw new Error("Razorpay checkout could not be loaded");
+        const Razorpay = await loadRazorpay();
         const payment = await api.post("/payment/create-order", { orderId: order._id, checkoutToken: data.checkoutToken });
         await new Promise((resolve, reject) => {
-          const razorpay = new window.Razorpay({
+          const razorpay = new Razorpay({
             key: payment.data.keyId,
             amount: payment.data.amount,
             currency: "INR",

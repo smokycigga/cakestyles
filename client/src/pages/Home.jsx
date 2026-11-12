@@ -22,7 +22,7 @@ import CakeStylesLogo from "../components/public/CakeStylesLogo";
 import ExpandableGallery from "../components/ui/expandable-gallery";
 import CircularImageGallery from "../components/ui/carousel-circular-image-gallery";
 import { useCart } from "../store/CartContext";
-import { getProductImage } from "../lib/productImage";
+import { getProductImage, imageSrcSet } from "../lib/productImage";
 import { toBestsellerCard } from "../lib/catalog";
 import { Placeholder } from "../components/public/ProductCard";
 import {
@@ -33,6 +33,9 @@ import {
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 const HERO_VIDEO = "/images/gallery/Create_a_premium_cinematic_bak%20(1).mp4";
+// Small WebP still of the film's opening frame. It paints instantly, so the
+// portal looks finished before the video has been touched.
+const HERO_POSTER = "/images/gallery/hero-poster.webp";
 
 // Customer reviews data
 const REVIEWS = [
@@ -77,10 +80,47 @@ export default function Home() {
   const portalRef = useRef(null);
   const carouselRef = useRef(null);
   const reviewsCarouselRef = useRef(null);
+  const heroVideoRef = useRef(null);
+  const [playHeroVideo, setPlayHeroVideo] = useState(false);
   const [bestsellers, setBestsellers] = useState([]);
   const [bestsellersLoading, setBestsellersLoading] = useState(true);
   const [emailInput, setEmailInput] = useState("");
   const [subscribed, setSubscribed] = useState(false);
+
+  // The background film is 2.7 MB. It used to be requested the instant the page
+  // opened, competing with the stylesheet and the JS bundle for a phone's
+  // bandwidth — which is most of why the site felt slow on mobile data. The
+  // poster frame now paints first, and the film is only fetched once the page
+  // has finished loading and the browser is idle.
+  useEffect(() => {
+    const connection = navigator.connection;
+    if (connection?.saveData) return;
+    if (/(^|-)2g$/.test(connection?.effectiveType || "")) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    let cancelled = false;
+    const start = () => {
+      if (cancelled) return;
+      if ("requestIdleCallback" in window) {
+        window.requestIdleCallback(() => !cancelled && setPlayHeroVideo(true), { timeout: 2000 });
+      } else {
+        window.setTimeout(() => !cancelled && setPlayHeroVideo(true), 400);
+      }
+    };
+
+    // `load` may already have fired by the time this effect runs.
+    if (document.readyState === "complete") start();
+    else window.addEventListener("load", start, { once: true });
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("load", start);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (playHeroVideo) heroVideoRef.current?.play().catch(() => {});
+  }, [playHeroVideo]);
 
   // The bestsellers row is real data: ranked by units sold, falling back to
   // Featured products before any sales exist. Nothing is hardcoded, so a new
@@ -192,10 +232,14 @@ export default function Home() {
           {/* Layer 1: Full-Bleed Looping Background Video */}
           <div className="portal-video-bg absolute inset-0 z-0 origin-center scale-110 will-change-transform">
             <video 
-              src={HERO_VIDEO} 
-              poster="/images/gallery/gallery3.jpg"
-              preload="metadata"
-              autoPlay loop muted playsInline 
+              ref={heroVideoRef}
+              src={playHeroVideo ? HERO_VIDEO : undefined}
+              poster={HERO_POSTER}
+              preload="none"
+              autoPlay={playHeroVideo}
+              loop
+              muted
+              playsInline 
               className="w-full h-full object-cover"
             />
             <div className="portal-duotone absolute inset-0 bg-[#eed3db] mix-blend-color opacity-0 pointer-events-none will-change-opacity" />
@@ -358,7 +402,11 @@ export default function Home() {
                     {item.image ? (
                       <img
                         src={item.image}
+                        srcSet={imageSrcSet(item.image)}
+                        sizes="(min-width: 1024px) 280px, (min-width: 640px) 45vw, 80vw"
                         alt={item.name}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-contain drop-shadow-lg group-hover:scale-106 transition-transform duration-500"
                       />
                     ) : (

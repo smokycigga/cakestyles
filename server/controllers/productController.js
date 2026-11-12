@@ -63,10 +63,12 @@ export const publicCatalogFilter = (categoryIds, now = new Date()) => ({
   category: { $in: categoryIds },
 });
 
-const visibleCategoryIds = async () => {
-  const categories = await Category.find({ active: true }).select("_id");
-  return categories.map((category) => category._id);
-};
+// One query returns the visible categories with the two fields the storefront
+// actually renders. Returning the documents rather than just the ids also lets
+// listPublic attach category names itself instead of paying for a separate
+// populate() round trip on every menu load.
+const visibleCategories = async () =>
+  Category.find({ active: true }).select("name slug").lean();
 
 const uniqueSlug = async (base) => {
   let slug = slugify(base) || "product";
@@ -81,7 +83,7 @@ const uniqueSlug = async (base) => {
 // top-level field via .select(), but a variant-level b2bPrice rides along in
 // the variants array — strip it so a customer can never see wholesale rates.
 const toPublicProduct = (product) => {
-  const obj = product.toObject();
+  const obj = typeof product.toObject === "function" ? product.toObject() : { ...product };
   delete obj.b2bPrice;
   if (Array.isArray(obj.variants)) {
     obj.variants = obj.variants.map(({ b2bPrice, ...variant }) => variant);
@@ -89,12 +91,25 @@ const toPublicProduct = (product) => {
   return obj;
 };
 
+// Stands in for populate("category", "name slug"). The category documents are
+// already in hand from visibleCategories(), so attaching them here costs nothing
+// while a populate() costs a full round trip to Atlas on every menu view.
+const withCategory = (product, categories) => {
+  const obj = toPublicProduct(product);
+  const id = String(obj.category?._id ?? obj.category ?? "");
+  const category = categories.find((entry) => String(entry._id) === id);
+  obj.category = category
+    ? { _id: category._id, name: category.name, slug: category.slug }
+    : null;
+  return obj;
+};
+
 export const listPublic = async (req, res) => {
-  const visibleIds = await visibleCategoryIds();
-  const filter = { ...publicCatalogFilter(visibleIds) };
+  const categories = await visibleCategories();
+  const filter = { ...publicCatalogFilter(categories.map((category) => category._id)) };
 
   if (req.query.category) {
-    const cat = await Category.findOne({ slug: req.query.category, active: true });
+    const cat = categories.find((category) => category.slug === req.query.category);
     if (!cat) return res.json({ products: [] });
     filter.category = cat._id;
   }
@@ -134,12 +149,12 @@ export const listPublic = async (req, res) => {
       const rankById = new Map(ranked.map((entry, index) => [String(entry._id), { ...entry, salesRank: index + 1 }]));
       const rankedProducts = await Product.find({ ...filter, _id: { $in: ranked.map((entry) => entry._id) } })
         .select("-costPrice -internalNotes -b2bPrice")
-        .populate("category", "name slug");
+        .lean();
       const products = rankedProducts
         .map((product) => {
           const sales = rankById.get(String(product._id));
           return {
-            ...toPublicProduct(product),
+            ...withCategory(product, categories),
             salesRank: sales.salesRank,
             unitsSold: sales.unitsSold,
             salesRevenue: sales.salesRevenue,
@@ -150,32 +165,51 @@ export const listPublic = async (req, res) => {
       if (products.length > 0) return res.json({ products, source: "sales" });
     }
 
-    const products = await Product.find({ ...filter, featured: true })
+    const featuredProducts = await Product.find({ ...filter, featured: true })
       .select("-costPrice -internalNotes -b2bPrice")
-      .populate("category", "name slug")
       .sort({ name: 1 })
-      .limit(limit);
-    return res.json({ products: products.map(toPublicProduct), source: "featured" });
+      .limit(limit)
+      .lean();
+    if (featuredProducts.length > 0) {
+      return res.json({
+        products: featuredProducts.map((product) => withCategory(product, categories)),
+        source: "featured",
+      });
+    }
+
+    // No sales to rank yet and nothing flagged as featured, which used to leave
+    // the home page carousel empty even though the shop was full of cakes. Fall
+    // back to the newest published items; the client tags anything that is not
+    // a sales ranking as SIGNATURE, so this stays honest.
+    const newest = await Product.find(filter)
+      .select("-costPrice -internalNotes -b2bPrice")
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+    return res.json({
+      products: newest.map((product) => withCategory(product, categories)),
+      source: "catalog",
+    });
   }
 
   const products = await Product.find(filter)
     .select("-costPrice -internalNotes -b2bPrice")
-    .populate("category", "name slug")
-    .sort({ featured: -1, name: 1 });
+    .sort({ featured: -1, name: 1 })
+    .lean();
 
-  res.json({ products: products.map(toPublicProduct) });
+  res.json({ products: products.map((product) => withCategory(product, categories)) });
 };
 
 export const getPublic = async (req, res) => {
-  const visibleIds = await visibleCategoryIds();
+  const categories = await visibleCategories();
   const product = await Product.findOne({
     slug: req.params.slug,
-    ...publicCatalogFilter(visibleIds),
+    ...publicCatalogFilter(categories.map((category) => category._id)),
   })
     .select("-costPrice -internalNotes -b2bPrice")
-    .populate("category", "name slug");
+    .lean();
   if (!product) return res.status(404).json({ message: "Product not found" });
-  res.json({ product: toPublicProduct(product) });
+  res.json({ product: withCategory(product, categories) });
 };
 
 export const listAdmin = [protect, requirePerm("catalog:read"), async (req, res) => {

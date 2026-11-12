@@ -3,14 +3,19 @@ import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 
 import Home from "./pages/Home";
 import Menu from "./pages/Menu";
-import ProductDetail from "./pages/ProductDetail";
-import CustomCakes from "./pages/CustomCakes";
-import About from "./pages/About";
-import Contact from "./pages/Contact";
-import Cart from "./pages/Cart";
-import Checkout from "./pages/Checkout";
-import OrderConfirmation from "./pages/OrderConfirmation";
-import Track from "./pages/Track";
+
+// Only the two browsing pages are in the first bundle. Everything else — the
+// checkout form, the framer-motion about page, the QR share sheet, the invoice
+// PDF tooling — is split into its own chunk and fetched when it is opened, so a
+// visitor reading the home page on a phone no longer downloads the whole shop.
+const ProductDetail = lazy(() => import("./pages/ProductDetail"));
+const CustomCakes = lazy(() => import("./pages/CustomCakes"));
+const About = lazy(() => import("./pages/About"));
+const Contact = lazy(() => import("./pages/Contact"));
+const Cart = lazy(() => import("./pages/Cart"));
+const Checkout = lazy(() => import("./pages/Checkout"));
+const OrderConfirmation = lazy(() => import("./pages/OrderConfirmation"));
+const Track = lazy(() => import("./pages/Track"));
 
 // The admin section is code-split so public storefront visitors never pay for
 // the admin pages on first load. Each admin route loads its chunk on demand.
@@ -50,10 +55,20 @@ const AdminFallback = () => (
   </div>
 );
 
+const PublicFallback = () => (
+  <div className="flex min-h-[60vh] items-center justify-center">
+    <span className="h-6 w-6 animate-spin rounded-full border-2 border-wine-200 border-t-wine-700" />
+  </div>
+);
+
 const PublicShell = ({ children, hideFooter = false }) => (
   <div className="min-h-screen flex flex-col">
     <Navbar />
-    <main className="flex-1">{children}</main>
+    <main className="flex-1">
+      {/* Navbar and footer render immediately; only the page body waits for its
+          chunk, so a lazy route never blanks the whole screen. */}
+      <Suspense fallback={<PublicFallback />}>{children}</Suspense>
+    </main>
     {!hideFooter && <Footer />}
   </div>
 );

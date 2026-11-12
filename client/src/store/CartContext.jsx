@@ -33,11 +33,11 @@ export const CartProvider = ({ children }) => {
       if (existing) {
         return current.map((entry) =>
           key(entry) === itemKey
-            ? { ...entry, quantity: Math.min(99, entry.quantity + item.quantity) }
+            ? { ...entry, quantity: entry.quantity + item.quantity }
             : entry,
         );
       }
-      return [...current, { ...item, quantity: Math.min(99, Math.max(1, item.quantity)) }];
+      return [...current, { ...item, quantity: Math.max(1, item.quantity) }];
     });
   };
 
@@ -46,7 +46,7 @@ export const CartProvider = ({ children }) => {
       quantity <= 0
         ? current.filter((entry) => key(entry) !== itemKey)
         : current.map((entry) =>
-            key(entry) === itemKey ? { ...entry, quantity: Math.min(99, quantity) } : entry,
+            key(entry) === itemKey ? { ...entry, quantity } : entry,
           ),
     );
   };

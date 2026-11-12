@@ -36,7 +36,9 @@ const objectIdSchema = z.string().refine(isMongoObjectId, "Must be a valid Mongo
 const catalogItemSchema = z.object({
   productId: objectIdSchema,
   variantName: z.string().optional(),
-  quantity: z.number().int().min(1).max(99),
+  // No upper bound: the shop takes large celebration and bulk orders, so the
+  // only rule is that a line holds a whole number of items.
+  quantity: z.number().int().min(1),
   addOns: z.array(z.string()).optional(),
   notes: z.string().max(500).optional(),
   useB2bPrice: z.boolean().optional(),
@@ -45,7 +47,7 @@ const catalogItemSchema = z.object({
 const customItemSchema = z.object({
   name: z.string().min(1),
   unitPrice: z.number().min(0),
-  quantity: z.number().int().min(1).max(999),
+  quantity: z.number().int().min(1),
   notes: z.string().max(500).optional(),
 });
 

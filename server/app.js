@@ -26,6 +26,7 @@ import activityRoutes from "./routes/activityRoutes.js";
 import crmRoutes from "./routes/crmRoutes.js";
 import loyaltyRoutes from "./routes/loyaltyRoutes.js";
 import campaignRoutes from "./routes/campaignRoutes.js";
+import maintenanceRoutes from "./routes/maintenanceRoutes.js";
 
 const app = express();
 
@@ -69,20 +70,30 @@ app.use("/api/activities", activityRoutes);
 app.use("/api/crm", crmRoutes);
 app.use("/api/loyalty", loyaltyRoutes);
 app.use("/api/campaigns", campaignRoutes);
+app.use("/api/maintenance", maintenanceRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });
 });
 
 app.use((err, req, res, next) => {
-  console.error("Unhandled error:", err);
   if (res.headersSent) return next(err);
-  const status = err.status || 500;
+
+  // A malformed :id — /api/customers/summary, a truncated link someone pasted —
+  // is a bad URL, not a server fault. Mongoose raises a CastError for it, and
+  // answering 500 both blamed the server and filled the logs with noise.
+  const castError = err.name === "CastError";
+  const status = castError ? 404 : err.status || 500;
+
+  if (!castError) console.error("Unhandled error:", err);
+
   // A deliberate 4xx carries a message written for whoever is looking at the
   // screen. Anything else is a fault, and its message is a Mongo error or a
   // stack detail — logged in full above, never handed to the client.
   res.status(status).json({
-    message: (status < 500 && err.message) || "Something went wrong. Please try again.",
+    message: castError
+      ? "Not found"
+      : (status < 500 && err.message) || "Something went wrong. Please try again.",
   });
 });
 
