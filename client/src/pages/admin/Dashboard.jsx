@@ -23,16 +23,45 @@ const RANGES = [
 const CHANNEL_COLORS = ["#6d2141", "#a44a6f", "#bd6c8c", "#d69cb2", "#e9c6d3", "#f5e3ea", "#c9a227"];
 const EXPENSE_COLORS = ["#8c3559", "#bd6c8c", "#c9a227", "#4a7c59", "#3d5a80", "#9e2a2b", "#7a6c5d", "#5e548e", "#ca6702", "#94a3b8", "#6b4a3a"];
 
+const MONTH_WINDOWS = [
+  [6, "Last 6 months"],
+  [12, "Last 12 months"],
+  [24, "Last 24 months"],
+];
+
+// A percentage change is only meaningful against a non-zero baseline, so a
+// missing figure renders as "—" rather than a misleading 0% or an infinity.
+const Delta = ({ pct, label }) => {
+  if (pct == null) {
+    return (
+      <span className="text-xs text-cocoa-400">
+        {label} <span className="font-medium">—</span>
+      </span>
+    );
+  }
+  const flat = Math.abs(pct) < 0.05;
+  const up = pct > 0;
+  return (
+    <span className="text-xs text-cocoa-400">
+      {label}{" "}
+      <span className={`font-semibold ${flat ? "text-cocoa-500" : up ? "text-emerald-700" : "text-rose-600"}`}>
+        {flat ? "no change" : `${up ? "▲" : "▼"} ${Math.abs(pct).toFixed(1)}%`}
+      </span>
+    </span>
+  );
+};
+
 export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [range, setRange] = useState("30d");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [months, setMonths] = useState(6);
   const [loading, setLoading] = useState(true);
 
-  const load = (r = range, f = from, t = to) => {
+  const load = (r = range, f = from, t = to, m = months) => {
     setLoading(true);
-    const params = r === "custom" && f && t ? { from: f, to: t } : { range: r };
+    const params = r === "custom" && f && t ? { from: f, to: t, months: m } : { range: r, months: m };
     api
       .get("/dashboard", { params })
       .then((res) => setData(res.data))
@@ -42,13 +71,18 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     api
-      .get("/dashboard", { params: { range: "30d" } })
+      .get("/dashboard", { params: { range: "30d", months: 6 } })
       .then((res) => setData(res.data))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
   const k = data?.kpis;
+  const mc = data?.monthComparison;
+  const monthly = data?.monthly || [];
+  // How far into the current month we are — the comparison is only fair over
+  // the same stretch of last month.
+  const daysElapsed = mc ? Number(mc.current.to.slice(8, 10)) : 0;
 
   return (
     <div>
@@ -98,6 +132,123 @@ export default function AdminDashboard() {
             <StatCard label="Contribution" value={inr(k.grossProfit)} tone={k.grossProfit >= 0 ? "good" : "bad"} sub="Sales − expenses" />
             <StatCard label="Refunds" value={inr(k.refunds)} />
             <StatCard label="Net Sales" value={inr(k.netSales)} sub="After refunds" />
+          </div>
+
+          {/* Month by month */}
+          <div className="mt-6 bg-white rounded-2xl border border-wine-100 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-sm font-semibold text-cocoa-900">Month by month</h3>
+                <p className="text-xs text-cocoa-400 mt-0.5">
+                  {mc
+                    ? `${mc.current.label} so far, against the same ${daysElapsed} day${daysElapsed === 1 ? "" : "s"} of ${mc.previousSamePeriod.label}`
+                    : "Loading…"}
+                </p>
+              </div>
+              <select
+                value={months}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setMonths(next);
+                  load(range, from, to, next);
+                }}
+                className="border border-wine-100 rounded-xl px-3 py-2 text-sm bg-white"
+              >
+                {MONTH_WINDOWS.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            {mc && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+                {[
+                  { key: "revenue", label: "Revenue", current: inr(mc.current.revenue), previous: inr(mc.previousSamePeriod.revenue) },
+                  { key: "orders", label: "Orders", current: mc.current.orders, previous: mc.previousSamePeriod.orders },
+                  { key: "aov", label: "Avg order value", current: inr(mc.current.aov), previous: inr(mc.previousSamePeriod.aov) },
+                ].map((tile) => (
+                  <div key={tile.key} className="rounded-xl border border-wine-100 bg-wine-50/40 px-4 py-3">
+                    <div className="text-[11px] font-medium uppercase tracking-wide text-cocoa-400">{tile.label}</div>
+                    <div className="mt-1 text-xl font-semibold text-cocoa-900">{tile.current}</div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2">
+                      <Delta pct={mc.delta[`${tile.key}Pct`]} label="vs last month" />
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-cocoa-400">
+                      {mc.previousSamePeriod.label} same period: {tile.previous}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {monthly.length === 0 ? (
+              <p className="text-sm text-cocoa-400 py-8 text-center">No orders recorded yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={monthly} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f5e3ea" vertical={false} />
+                  <XAxis dataKey="shortLabel" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${v >= 1000 ? `${Math.round(v / 1000)}k` : v}`} />
+                  <Tooltip
+                    formatter={(value, name) => [inr(value), name]}
+                    labelFormatter={(_, payload) => {
+                      const row = payload?.[0]?.payload;
+                      if (!row) return "";
+                      return `${row.label}${row.partial ? " (so far)" : ""} · ${row.orders} order${row.orders === 1 ? "" : "s"}`;
+                    }}
+                  />
+                  {/* The running month is drawn lighter: it is not a finished
+                      month, and comparing its height to a full one is unfair. */}
+                  <Bar dataKey="revenue" radius={[6, 6, 0, 0]} name="Revenue">
+                    {monthly.map((row) => (
+                      <Cell key={row.month} fill={row.partial ? "#d69cb2" : "#6d2141"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+
+            {monthly.length > 0 && (
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-cocoa-400">
+                      <th className="py-2 pr-3 font-medium">Month</th>
+                      <th className="py-2 pr-3 font-medium text-right">Revenue</th>
+                      <th className="py-2 pr-3 font-medium text-right">Orders</th>
+                      <th className="py-2 pr-3 font-medium text-right">Avg order</th>
+                      <th className="py-2 pr-3 font-medium text-right">New customers</th>
+                      <th className="py-2 font-medium">Best seller</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...monthly].reverse().map((row) => (
+                      <tr key={row.month} className="border-t border-wine-50">
+                        <td className="py-2 pr-3 whitespace-nowrap">
+                          <span className="text-cocoa-900">{row.label}</span>
+                          {row.partial && <span className="ml-2 text-[10px] uppercase tracking-wide text-wine-500">so far</span>}
+                        </td>
+                        <td className="py-2 pr-3 text-right font-medium">{inr(row.revenue)}</td>
+                        <td className="py-2 pr-3 text-right text-cocoa-600">{row.orders}</td>
+                        <td className="py-2 pr-3 text-right text-cocoa-600">{inr(row.aov)}</td>
+                        <td className="py-2 pr-3 text-right text-cocoa-600">{row.newCustomers}</td>
+                        <td className="py-2 text-cocoa-600 truncate max-w-[16rem]">
+                          {row.topProduct ? `${row.topProduct.name} · ${inr(row.topProduct.revenue)}` : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {mc && mc.previousFull && (
+              <p className="mt-3 text-[11px] text-cocoa-400">
+                {mc.previousFull.label} in full: {inr(mc.previousFull.revenue)} from {mc.previousFull.orders} order
+                {mc.previousFull.orders === 1 ? "" : "s"}. The comparison above deliberately stops at day {daysElapsed} so a
+                part-finished month is not measured against a complete one.
+              </p>
+            )}
           </div>
 
           {/* Charts */}

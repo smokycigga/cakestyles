@@ -4,9 +4,132 @@ import Expense from "../models/Expense.js";
 import Customer from "../models/Customer.js";
 import { protect, requirePerm } from "../middleware/auth.js";
 import { round2 } from "../utils/pricing.js";
-import { resolveRange, istDateString, addDaysIst } from "../utils/dates.js";
+import { resolveRange, istDateString, addDaysIst, startOfIstDay, endOfIstDay } from "../utils/dates.js";
 
 const EXCLUDED = ["cancelled", "refunded", "partially_refunded"];
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "2026-11" for an order timestamp, in IST — the shop's calendar month.
+const monthKeyOf = (date) => istDateString(date).slice(0, 7);
+
+const shiftMonth = (key, delta) => {
+  const [year, month] = key.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+};
+
+const daysInMonth = (key) => {
+  const [year, month] = key.split("-").map(Number);
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+};
+
+const monthLabel = (key) => {
+  const [year, month] = key.split("-");
+  return `${MONTH_NAMES[Number(month) - 1]} ${year}`;
+};
+
+const pctChange = (current, previous) =>
+  previous > 0 ? round2(((current - previous) / previous) * 100) : null;
+
+// Month-by-month totals, plus a like-for-like comparison of this month against
+// the same stretch of last month.
+//
+// The naive comparison — "this month vs last month" — is misleading for most of
+// the month: on the 5th it compares five days against thirty. So the headline
+// delta uses last month *up to the same day*, and the whole of last month is
+// reported separately for context.
+const buildMonthly = (allOrders, firstOrderByCustomer, monthsWanted, todayIst) => {
+  const currentKey = todayIst.slice(0, 7);
+
+  const keys = [];
+  for (let i = monthsWanted - 1; i >= 0; i -= 1) keys.push(shiftMonth(currentKey, -i));
+
+  const buckets = new Map(
+    keys.map((key) => [key, { revenue: 0, orders: 0, units: 0, customers: new Set(), products: new Map() }])
+  );
+
+  for (const order of allOrders) {
+    const bucket = buckets.get(monthKeyOf(order.createdAt));
+    if (!bucket) continue; // outside the window we are reporting on
+    bucket.revenue += order.grandTotal;
+    bucket.orders += 1;
+    if (order.customer) bucket.customers.add(String(order.customer));
+    for (const item of order.items || []) {
+      bucket.units += item.quantity;
+      bucket.products.set(item.name, (bucket.products.get(item.name) || 0) + item.lineTotal);
+    }
+  }
+
+  // New customers per month: first-ever order falls in that month.
+  const firstMonthByCustomer = new Map();
+  for (const [customer, firstAt] of firstOrderByCustomer) {
+    firstMonthByCustomer.set(monthKeyOf(firstAt), (firstMonthByCustomer.get(monthKeyOf(firstAt)) || 0) + 1);
+  }
+
+  const monthly = keys.map((key) => {
+    const bucket = buckets.get(key);
+    const top = [...bucket.products.entries()].sort((a, b) => b[1] - a[1])[0];
+    return {
+      month: key,
+      label: monthLabel(key),
+      shortLabel: MONTH_NAMES[Number(key.split("-")[1]) - 1],
+      revenue: round2(bucket.revenue),
+      orders: bucket.orders,
+      aov: bucket.orders ? round2(bucket.revenue / bucket.orders) : 0,
+      units: bucket.units,
+      customers: bucket.customers.size,
+      newCustomers: firstMonthByCustomer.get(key) || 0,
+      topProduct: top ? { name: top[0], revenue: round2(top[1]) } : null,
+      // A month that has not finished yet will always look short next to a
+      // complete one; the UI uses this to avoid a misleading "down" arrow.
+      partial: key === currentKey,
+    };
+  });
+
+  const previousKey = shiftMonth(currentKey, -1);
+  const dayOfMonth = Number(todayIst.slice(8, 10));
+
+  const sumBetween = (fromKey, fromDay, toKey, toDay) => {
+    const from = startOfIstDay(`${fromKey}-${String(fromDay).padStart(2, "0")}`);
+    const to = endOfIstDay(`${toKey}-${String(toDay).padStart(2, "0")}`);
+    const rows = allOrders.filter((o) => o.createdAt >= from && o.createdAt <= to);
+    const revenue = round2(rows.reduce((sum, o) => sum + o.grandTotal, 0));
+    return {
+      from: istDateString(from),
+      to: istDateString(to),
+      revenue,
+      orders: rows.length,
+      aov: rows.length ? round2(revenue / rows.length) : 0,
+    };
+  };
+
+  const current = sumBetween(currentKey, 1, currentKey, dayOfMonth);
+  // Same day-of-month last month — clamped, so 31 Mar compares against 28/29 Feb.
+  const previousSamePeriod = sumBetween(
+    previousKey,
+    1,
+    previousKey,
+    Math.min(dayOfMonth, daysInMonth(previousKey))
+  );
+  const previousFull = sumBetween(previousKey, 1, previousKey, daysInMonth(previousKey));
+
+  return {
+    monthly,
+    monthComparison: {
+      current: { label: monthLabel(currentKey), ...current },
+      previousSamePeriod: { label: monthLabel(previousKey), ...previousSamePeriod },
+      previousFull: { label: monthLabel(previousKey), ...previousFull },
+      delta: {
+        revenuePct: pctChange(current.revenue, previousSamePeriod.revenue),
+        ordersPct: pctChange(current.orders, previousSamePeriod.orders),
+        aovPct: pctChange(current.aov, previousSamePeriod.aov),
+        revenue: round2(current.revenue - previousSamePeriod.revenue),
+        orders: current.orders - previousSamePeriod.orders,
+      },
+    },
+  };
+};
 
 // One call returns every dashboard section for the selected period (PRD §15).
 // A local shop's volume fits comfortably in memory, so we aggregate in JS
@@ -128,10 +251,25 @@ export const dashboard = [protect, requirePerm("analytics:read"), async (req, re
     growthPct: prevSales > 0 ? round2(((grossSales - prevSales) / prevSales) * 100) : null,
   };
 
+  // Absent or nonsense (0, negative, NaN) falls back to six months; anything
+  // else is clamped to what the chart can usefully draw.
+  const requestedMonths = Number(req.query.months);
+  const monthsWanted = Number.isFinite(requestedMonths) && requestedMonths >= 1
+    ? Math.min(Math.floor(requestedMonths), 24)
+    : 6;
+  const { monthly, monthComparison } = buildMonthly(
+    allOrders,
+    firstOrderByCustomer,
+    monthsWanted,
+    istDateString(new Date())
+  );
+
   res.json({
     range: { from: istDateString(from), to: endDay },
     kpis,
     series: days,
+    monthly,
+    monthComparison,
     channels,
     topProducts,
     topCustomers,
