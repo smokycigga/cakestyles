@@ -1,6 +1,7 @@
 import Setting from "../models/Setting.js";
 import { protect, requirePerm } from "../middleware/auth.js";
 import { writeAudit } from "../utils/audit.js";
+import { alertRecipients, channelStatus, sendTestAlert } from "../utils/notify.js";
 
 // Public subset — powers checkout rules, store info and the menu header.
 export const publicSettings = async (req, res) => {
@@ -16,11 +17,32 @@ export const publicSettings = async (req, res) => {
   });
 };
 
-const EDITABLE_FIELDS = ["store", "tax", "delivery", "pickup", "paymentMethods", "invoice", "loyalty"];
+const EDITABLE_FIELDS = ["store", "tax", "delivery", "pickup", "paymentMethods", "invoice", "loyalty", "alerts"];
 
 export const getSettings = [protect, requirePerm("settings:read"), async (req, res) => {
   const s = await Setting.getSettings();
   res.json({ settings: s });
+}];
+
+// What the Settings screen needs to explain itself: which channels are live,
+// who would receive an order email, and what is still missing for the rest.
+export const alertSettings = [protect, requirePerm("settings:read"), async (req, res) => {
+  res.json({
+    channels: channelStatus(),
+    recipients: await alertRecipients(),
+  });
+}];
+
+// Sends a real alert through every configured channel. Owner-only because it
+// can put a message on someone's phone.
+export const testAlert = [protect, requirePerm("settings:write"), async (req, res) => {
+  const results = await sendTestAlert();
+  const delivered = results.filter((result) => result.ok);
+  res.json({
+    results,
+    delivered: delivered.map((result) => result.channel),
+    ok: delivered.length > 0,
+  });
 }];
 
 export const updateSettings = [protect, requirePerm("settings:write"), async (req, res) => {

@@ -4,16 +4,66 @@ import api, { errMsg } from "../../lib/api";
 import { PageHeader, Spinner, Button, Field, inputCls } from "../../components/admin/ui";
 import { useAuth } from "../../store/AuthContext";
 
+const CHANNELS = [
+  {
+    key: "email",
+    label: "Email",
+    hint: { ready: "New orders are emailed to the addresses above.", missing: "Add SMTP_HOST, SMTP_USER, SMTP_PASS" },
+  },
+  {
+    key: "telegram",
+    label: "Telegram push",
+    hint: { ready: "Alerts arrive as a phone notification.", missing: "Add TELEGRAM_BOT_TOKEN" },
+  },
+  {
+    key: "ntfy",
+    label: "ntfy push",
+    hint: { ready: "Alerts arrive in the ntfy app.", missing: "Add NTFY_TOPIC" },
+  },
+];
+
 export default function Settings() {
   const { can, user } = useAuth();
   const [settings, setSettings] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [alertEmails, setAlertEmails] = useState("");
+  const [channels, setChannels] = useState(null);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
-    api.get("/settings").then((r) => setSettings(r.data.settings)).catch(() => {});
+    api
+      .get("/settings")
+      .then((r) => {
+        setSettings(r.data.settings);
+        setAlertEmails((r.data.settings.alerts?.emails || []).join(", "));
+      })
+      .catch(() => {});
+    api.get("/settings/alerts").then((r) => setChannels(r.data.channels)).catch(() => {});
   }, []);
 
   if (!settings) return <Spinner />;
+
+  // Sends a real message through every configured channel, so "is it working?"
+  // is answered by a phone buzzing rather than by reading code.
+  const sendTest = async () => {
+    setTesting(true);
+    try {
+      const { data } = await api.post("/settings/alerts/test");
+      if (data.delivered.length > 0) {
+        toast.success(`Test alert sent via ${data.delivered.join(", ")}`);
+      } else {
+        const reasons = data.results
+          .filter((result) => !result.ok)
+          .map((result) => `${result.channel}: ${result.error || result.skipped}`)
+          .join(" · ");
+        toast.error(`Nothing was delivered — ${reasons}`, { duration: 8000 });
+      }
+    } catch (err) {
+      toast.error(errMsg(err));
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const set = (path, value) => {
     setSettings((s) => {
@@ -39,6 +89,12 @@ export default function Settings() {
         paymentMethods: settings.paymentMethods,
         invoice: settings.invoice,
         loyalty: settings.loyalty,
+        alerts: {
+          emails: alertEmails
+            .split(/[,;\s]+/)
+            .map((email) => email.trim())
+            .filter(Boolean),
+        },
       });
       toast.success("Settings saved");
     } catch (err) {
@@ -223,6 +279,61 @@ export default function Settings() {
             </Field>
             <p className="text-[11px] text-cocoa-400">
               Online payments also need Razorpay test/live keys set in the server environment.
+            </p>
+          </section>
+
+          {/* Order alerts */}
+          <section className="bg-white rounded-2xl border border-wine-100 p-5 space-y-3 lg:col-span-2">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-cocoa-900">New order alerts</h3>
+                <p className="text-[11px] text-cocoa-400">
+                  Where a notification goes the moment an order is placed.
+                </p>
+              </div>
+              <Button variant="outline" onClick={sendTest} disabled={!editable || testing}>
+                {testing ? "Sending…" : "Send test alert"}
+              </Button>
+            </div>
+
+            <Field label="Email recipients (comma-separated)">
+              <input
+                disabled={!editable}
+                value={alertEmails}
+                onChange={(event) => setAlertEmails(event.target.value)}
+                placeholder="owner@example.com, manager@example.com"
+                className={inputCls}
+              />
+            </Field>
+
+            <div className="grid sm:grid-cols-3 gap-2">
+              {CHANNELS.map(({ key, label, hint }) => {
+                const channel = channels?.[key];
+                const ready = Boolean(channel?.configured);
+                return (
+                  <div key={key} className={`rounded-xl border px-3 py-2 ${ready ? "border-emerald-200 bg-emerald-50" : "border-wine-100 bg-cream-50"}`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${ready ? "bg-emerald-500" : "bg-cocoa-300"}`} />
+                      <span className="text-xs font-semibold text-cocoa-800">{label}</span>
+                      <span className={`ml-auto text-[10px] font-semibold ${ready ? "text-emerald-700" : "text-cocoa-400"}`}>
+                        {ready ? "ready" : "not set up"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-cocoa-500 mt-1 leading-snug">
+                      {ready ? hint.ready : hint.missing}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-[11px] text-cocoa-400">
+              Channels are switched on by environment variables on the server — email needs
+              <code className="mx-1 rounded bg-cream-100 px-1">SMTP_HOST</code>,
+              <code className="mx-1 rounded bg-cream-100 px-1">SMTP_USER</code> and
+              <code className="mx-1 rounded bg-cream-100 px-1">SMTP_PASS</code>; a phone push needs
+              <code className="mx-1 rounded bg-cream-100 px-1">TELEGRAM_BOT_TOKEN</code>. Until one is set,
+              new orders are only written to the server log.
             </p>
           </section>
         </div>

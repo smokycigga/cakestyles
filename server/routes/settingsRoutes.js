@@ -1,5 +1,11 @@
 import express from "express";
-import { publicSettings, getSettings, updateSettings } from "../controllers/settingsController.js";
+import {
+  alertSettings,
+  getSettings,
+  publicSettings,
+  testAlert,
+  updateSettings,
+} from "../controllers/settingsController.js";
 import { publicCache } from "../middleware/publicCache.js";
 
 const router = express.Router();
@@ -9,6 +15,10 @@ const router = express.Router();
 router.get("/public", publicCache(300), publicSettings);
 router.get("/", getSettings);
 router.put("/", updateSettings);
+
+// Order alerts: what is wired up, and a button that sends a real test.
+router.get("/alerts", alertSettings);
+router.post("/alerts/test", testAlert);
 
 export default router;
 

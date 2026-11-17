@@ -43,6 +43,12 @@ const settingSchema = new mongoose.Schema(
     invoice: {
       prefix: { type: String, default: "INV" },
     },
+    // Who hears about a new order. The channel credentials live in the
+    // environment (they are secrets); the recipients are editable here so the
+    // address can change without a redeploy.
+    alerts: {
+      emails: { type: [String], default: [] },
+    },
     loyalty: {
       enabled: { type: Boolean, default: true },
       earnPerRupee: { type: Number, default: 0.01, min: 0 },
