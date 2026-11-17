@@ -496,11 +496,42 @@ export const list = [protect, requirePerm("orders:read"), async (req, res) => {
   }
 
   const limit = Math.min(Number(req.query.limit) || 100, 500);
+
+  // The table only renders the summary columns, but this used to return whole
+  // order documents — `items` and `statusHistory` included. `statusHistory`
+  // grows on every status change, so the response crept up to 165KB for 100
+  // orders and got worse as the shop got busier. Selecting the columns the list
+  // actually shows cuts that by roughly 90%.
+  const LIST_FIELDS = [
+    "orderNumber",
+    "customer",
+    "customerSnapshot",
+    "source",
+    "fulfilment",
+    "subtotal",
+    "deliveryFee",
+    "taxRate",
+    "taxTotal",
+    "discount",
+    "grandTotal",
+    "amountPaid",
+    "payment.status",
+    "payment.method",
+    "status",
+    "invoice",
+    "createdAt",
+    "updatedAt",
+  ].join(" ");
+
   const orders = await Order.find(filter)
+    .select(LIST_FIELDS)
     .populate("customer", "name phone tags")
     .populate("invoice", "invoiceNumber")
     .sort({ createdAt: -1 })
-    .limit(limit);
+    .limit(limit)
+    // Plain objects: no Mongoose documents to hydrate for a response that is
+    // serialised to JSON immediately.
+    .lean();
 
   res.json({ orders });
 }];

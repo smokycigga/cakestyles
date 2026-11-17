@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { 
   ChevronLeft, 
@@ -19,8 +19,12 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useGSAP } from "@gsap/react";
 import api from "../lib/api";
 import CakeStylesLogo from "../components/public/CakeStylesLogo";
-import ExpandableGallery from "../components/ui/expandable-gallery";
-import CircularImageGallery from "../components/ui/carousel-circular-image-gallery";
+// Both of these sit far below the fold, and between them they pull in
+// framer-motion and gsap's MotionPathPlugin. Importing them statically put
+// those libraries in the entry chunk, which every route pays for — including
+// the product page, where neither component is ever shown.
+const ExpandableGallery = lazy(() => import("../components/ui/expandable-gallery"));
+const CircularImageGallery = lazy(() => import("../components/ui/carousel-circular-image-gallery"));
 import { useCart } from "../store/CartContext";
 import { getProductImage, imageSrcSet } from "../lib/productImage";
 import { toBestsellerCard } from "../lib/catalog";
@@ -497,7 +501,9 @@ export default function Home() {
 
               {/* Right Column: Custom Cake Photography */}
               <div className="md:col-span-5 flex justify-center">
-                <CircularImageGallery />
+                <Suspense fallback={<div className="aspect-square w-full max-w-[390px]" aria-hidden="true" />}>
+                  <CircularImageGallery />
+                </Suspense>
               </div>
 
             </div>
@@ -760,7 +766,9 @@ export default function Home() {
       {/* =================================================================== */}
       {/* 6. "A LITTLE SWEETNESS ON INSTAGRAM" (Reference Image)               */}
       {/* =================================================================== */}
-      <ExpandableGallery />
+      <Suspense fallback={<div className="h-[390px] sm:h-[450px]" aria-hidden="true" />}>
+        <ExpandableGallery />
+      </Suspense>
 
       {/* =================================================================== */}
       {/* 7. "LET'S STAY IN TOUCH" NEWSLETTER BANNER (Reference Image)        */}

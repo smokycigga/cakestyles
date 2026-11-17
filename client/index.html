@@ -9,16 +9,31 @@
       name="description"
       content="Cakestyles — handcrafted 100% eggless cakes, brownies, cheesecakes and desserts. Order online for pickup or delivery."
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Poppins:wght@300;400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
     <title>Cakestyles — Handcrafted Cakes & Bakes</title>
-    <!-- The hero poster is the largest thing painted on the first screen, so it
-         is fetched alongside the stylesheet rather than after the JS parses. -->
-    <link rel="preload" as="image" type="image/webp" href="/images/gallery/hero-poster.webp" fetchpriority="high" />
+
+    <!-- Fonts are self-hosted (see scripts/fetch-fonts.py).
+         They used to come from fonts.googleapis.com, which cost two extra
+         origins and a render-blocking stylesheet: measured at ~1.6s before
+         first paint on a throttled 4G phone. Same files, same origin now. -->
+    <link rel="stylesheet" href="/fonts/fonts.css" />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/poppins-normal-400.woff2" crossorigin />
+    <link rel="preload" as="font" type="font/woff2" href="/fonts/playfair-display-normal-400-900.woff2" crossorigin />
+
+    <script>
+      // The hero film — and therefore its 46KB poster — only exists on the
+      // homepage. A plain <link rel="preload"> in this file applied to every
+      // route, so the product and order pages were fetching a picture they
+      // never show, at high priority, ahead of their own JavaScript.
+      if (location.pathname === "/") {
+        var poster = document.createElement("link");
+        poster.rel = "preload";
+        poster.as = "image";
+        poster.type = "image/webp";
+        poster.href = "/images/gallery/hero-poster.webp";
+        poster.setAttribute("fetchpriority", "high");
+        document.head.appendChild(poster);
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
