@@ -13,6 +13,14 @@ import { validate } from "../middleware/validate.js";
 import { slugify } from "../utils/misc.js";
 import { writeAudit } from "../utils/audit.js";
 import { sendCSV } from "../utils/csv.js";
+import {
+  escapeSearchRegex,
+  fuzzyValuesMatch,
+  hasWordStartingWith,
+  searchWithFallback,
+} from "../utils/search.js";
+
+export { escapeSearchRegex };
 
 const variantSchema = z.object({ name: z.string().min(1), price: z.number().min(0), b2bPrice: z.number().min(0).nullable().optional() });
 const addOnSchema = z.object({ name: z.string().min(1), price: z.number().min(0) });
@@ -48,8 +56,6 @@ const AUDIT_FIELDS = [
   "name", "basePrice", "category", "availability", "orderability", "featured",
   "status", "variants", "addOns", "taxRate", "costPrice", "b2bPrice",
 ];
-
-export const escapeSearchRegex = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // Scheduled products auto-appear once publishAt passes.
 export const publicFilter = (now = new Date()) => ({
@@ -106,26 +112,33 @@ const withCategory = (product, categories) => {
 
 export const listPublic = async (req, res) => {
   const categories = await visibleCategories();
-  const filter = { ...publicCatalogFilter(categories.map((category) => category._id)) };
+  const visibleIds = categories.map((category) => category._id);
 
+  // Conditions fixed for this request: which shelf, and which products exist.
+  const scope = { category: { $in: visibleIds } };
   if (req.query.category) {
     const cat = categories.find((category) => category.slug === req.query.category);
     if (!cat) return res.json({ products: [] });
-    filter.category = cat._id;
+    scope.category = cat._id;
   }
-  if (req.query.featured === "1") filter.featured = true;
-  if (req.query.search) {
-    const search = new RegExp(escapeSearchRegex(req.query.search), "i");
-    filter.$and = [
-      publicFilter(),
-      { $or: [
-        { name: search },
-        { shortDescription: search },
-        { tags: search },
-      ] },
-    ];
-    delete filter.$or;
-  }
+  if (req.query.featured === "1") scope.featured = true;
+
+  // Visibility used to be merged into the same $or as the search terms, which
+  // meant a search could widen past the published filter. Keeping it as its own
+  // $and clause makes the two independent.
+  const scopeFilter = (searchClause) => {
+    const clauses = [publicFilter()];
+    if (searchClause) clauses.push(searchClause);
+    return { ...scope, $and: clauses };
+  };
+
+  const menuQuery = (filter) =>
+    Product.find(filter)
+      .select("-costPrice -internalNotes -b2bPrice")
+      .sort({ featured: -1, name: 1 })
+      .lean();
+
+  const filter = scopeFilter(null);
 
   if (req.query.bestsellers === "1") {
     const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 4, 1), 20);
@@ -192,10 +205,37 @@ export const listPublic = async (req, res) => {
     });
   }
 
-  const products = await Product.find(filter)
-    .select("-costPrice -internalNotes -b2bPrice")
-    .sort({ featured: -1, name: 1 })
-    .lean();
+  // Word-order-independent, prefix-aware search, with a last-resort typo pass.
+  // The category branch is what makes "cat" reach the Cakes shelf even though
+  // no product name contains that word.
+  const products = req.query.search
+    ? await searchWithFallback(
+        scopeFilter,
+        req.query.search,
+        ["name", "shortDescription", "tags"],
+        menuQuery,
+        (token) => {
+          const ids = categories
+            .filter((category) => hasWordStartingWith(category.name, token))
+            .map((category) => category._id);
+          return ids.length > 0 ? [{ category: { $in: ids } }] : [];
+        },
+        async (tokens) => {
+          // Nothing matched literally, so scan the (small) visible catalogue in
+          // memory and keep whatever is one keystroke away.
+          const nameById = new Map(categories.map((category) => [String(category._id), category.name]));
+          const rows = await menuQuery(filter);
+          return rows.filter((product) =>
+            fuzzyValuesMatch(
+              [product.name, product.shortDescription, nameById.get(String(product.category)), ...(product.tags || [])]
+                .filter(Boolean)
+                .map(String),
+              tokens,
+            ),
+          );
+        },
+      )
+    : await menuQuery(filter);
 
   res.json({ products: products.map((product) => withCategory(product, categories)) });
 };
@@ -217,16 +257,45 @@ export const listAdmin = [protect, requirePerm("catalog:read"), async (req, res)
   if (req.query.status) filter.status = req.query.status;
   if (req.query.category) filter.category = req.query.category;
   if (req.query.availability) filter.availability = req.query.availability;
-  if (req.query.search) {
-    filter.$or = [
-      { name: new RegExp(req.query.search, "i") },
-      { sku: new RegExp(req.query.search, "i") },
-    ];
-  }
 
-  const products = await Product.find(filter)
-    .populate("category", "name slug")
-    .sort({ updatedAt: -1 });
+  // Same matcher as the storefront: every word, any order, prefix-friendly.
+  // Category names are searched too, so "cat" finds the Cakes shelf here.
+  const adminQuery = (searchClause) =>
+    Product.find(searchClause ? { ...filter, ...searchClause } : filter)
+      .populate("category", "name slug")
+      .sort({ updatedAt: -1 });
+
+  let products;
+  if (req.query.search) {
+    // Categories are few, so one cheap read is enough to answer "which shelves
+    // does this word name?" for every token in the query.
+    const categories = await Category.find({}).select("name").lean();
+    products = await searchWithFallback(
+      (searchClause) => searchClause,
+      req.query.search,
+      ["name", "sku", "shortDescription", "tags"],
+      (searchClause) => adminQuery(searchClause),
+      (token) => {
+        const ids = categories
+          .filter((category) => hasWordStartingWith(category.name, token))
+          .map((category) => category._id);
+        return ids.length > 0 ? [{ category: { $in: ids } }] : [];
+      },
+      async (tokens) => {
+        const rows = await adminQuery(null);
+        return rows.filter((product) =>
+          fuzzyValuesMatch(
+            [product.name, product.sku, product.shortDescription, product.category?.name, ...(product.tags || [])]
+              .filter(Boolean)
+              .map(String),
+            tokens,
+          ),
+        );
+      },
+    );
+  } else {
+    products = await adminQuery(null);
+  }
 
   res.json({ products });
 }];

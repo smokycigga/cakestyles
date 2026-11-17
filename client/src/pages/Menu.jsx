@@ -6,6 +6,7 @@ import ShareMenu from "../components/public/ShareMenu";
 import FulfilmentChoiceModal from "../components/public/FulfilmentChoiceModal";
 import { useFulfilment } from "../store/FulfilmentContext";
 import { categoryChips, groupByCategoryOrder } from "../lib/catalog";
+import { filterBySearch } from "../lib/search";
 
 export default function Menu() {
   const [products, setProducts] = useState([]);
@@ -57,14 +58,13 @@ export default function Menu() {
   }, [categories, products]);
 
   const filtered = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return products.filter((product) => {
-      if (activeCat !== "all" && product.category?.slug !== activeCat) return false;
-      if (!query) return true;
-      return [product.name, product.shortDescription, ...(product.tags || [])]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(query));
-    });
+    // Shelf filter first, then the shared matcher: every word, any order,
+    // prefix-friendly, and category names count as searchable text.
+    const shelf =
+      activeCat === "all"
+        ? products
+        : products.filter((product) => product.category?.slug === activeCat);
+    return filterBySearch(shelf, search);
   }, [activeCat, products, search]);
 
   // Only offer a chip for a category that actually has products behind it.

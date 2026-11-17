@@ -7,6 +7,7 @@ import { inr, daysFromNow } from "../../lib/format";
 import { SOURCE_LABELS, PAYMENT_METHOD_LABELS } from "../../lib/meta";
 import { orderTotalsPreview } from "../../lib/invoiceTotals";
 import { PageHeader, Button, Field, inputCls, Badge } from "../../components/admin/ui";
+import ProductPicker from "../../components/admin/ProductPicker";
 import { useSettings } from "../../store/SettingsContext";
 
 const MANUAL_SOURCES = ["instagram", "whatsapp", "phone", "walk_in", "repeat", "bni", "jbn", "other"];
@@ -292,19 +293,19 @@ export default function ManualOrder() {
                 <input type="checkbox" checked={b2bMode} onChange={(e) => setB2bMode(e.target.checked)} className="accent-indigo-600" />
                 B2B (wholesale)
               </label>
-              <select value="" onChange={(e) => e.target.value && addProduct(e.target.value)} className="border border-wine-100 rounded-xl px-3 py-2 text-sm bg-white">
-                <option value="">{b2bMode ? "+ B2B product…" : "+ Catalogue product…"}</option>
-                {(b2bMode ? b2bProducts : products).map((p) => (
-                  <option key={p._id} value={p._id}>
-                    {b2bMode
-                      ? `${p.name} (B2B ${b2bFromPrice(p) != null ? inr(b2bFromPrice(p)) : "—"}${(p.variants || []).length > 1 ? "+" : ""})`
-                      : `${p.name} (${inr(p.basePrice)}+)`}
-                  </option>
-                ))}
-                {b2bMode && b2bProducts.length === 0 && (
-                  <option value="" disabled>No products have a B2B price set</option>
-                )}
-              </select>
+              <ProductPicker
+                products={b2bMode ? b2bProducts : products}
+                label={b2bMode ? "B2B product" : "Catalogue product"}
+                emptyLabel={b2bMode ? "No products have a B2B price set" : "No products match"}
+                renderMeta={(p) =>
+                  b2bMode
+                    ? b2bFromPrice(p) != null
+                      ? `B2B ${inr(b2bFromPrice(p))}${(p.variants || []).length > 1 ? "+" : ""}`
+                      : "—"
+                    : `${inr(p.basePrice)}+`
+                }
+                onPick={(p) => addProduct(p._id)}
+              />
               <Button type="button" variant="outline" onClick={addCustom}>
                 <Plus className="w-4 h-4" /> Custom item
               </Button>
@@ -368,7 +369,7 @@ export default function ManualOrder() {
                   </div>
                   <div className="sm:col-span-1">
                     <span className="text-[11px] text-cocoa-400">Qty</span>
-                    <input type="number" min="1" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value })} className={inputCls} />
+                    <input type="number" min="0.001" step="0.5" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value })} className={inputCls} />
                   </div>
                   <div className="sm:col-span-2">
                     <span className="text-[11px] text-cocoa-400">Line total</span>
