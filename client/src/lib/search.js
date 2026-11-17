@@ -77,9 +77,16 @@ const withinOneEdit = (a, b) => {
 
 export const MIN_FUZZY_LENGTH = 3;
 
+/**
+ * One typo away, by either of the two routes that matter:
+ * the word's first `token.length` characters ("cat" -> "cak" in "Cakes"), or
+ * the whole word ("choclate" -> "chocolate").
+ */
 export const fuzzyWordMatch = (text, token) => {
   if (token.length < MIN_FUZZY_LENGTH) return false;
-  return words(text).some((word) => withinOneEdit(token, word.slice(0, token.length)));
+  return words(text).some(
+    (word) => withinOneEdit(token, word.slice(0, token.length)) || withinOneEdit(token, word),
+  );
 };
 
 const matchesFuzzy = (values, tokens) =>

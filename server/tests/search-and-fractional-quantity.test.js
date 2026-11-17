@@ -89,6 +89,13 @@ describe("search tokenising", () => {
     expect(fuzzyWordMatch("Walnut Brownie Slab", "xyz")).toBe(false);
   });
 
+  it("tolerates a transposition inside a longer word", () => {
+    // "choclate" vs "chocolate" is one edit, but the prefix comparison drifts
+    // out of alignment and would score it as four.
+    expect(fuzzyWordMatch("Chocolate Truffle Cake", "choclate")).toBe(true);
+    expect(fuzzyWordMatch("Vanilla Buttercream Cake", "butercream")).toBe(true);
+  });
+
   it("does not attempt a typo pass for very short tokens", () => {
     expect(fuzzyWordMatch("Cakes", "ca")).toBe(false);
   });

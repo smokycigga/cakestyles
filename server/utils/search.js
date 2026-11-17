@@ -92,15 +92,22 @@ const editDistanceAtMostOne = (a, b) => {
 export const MIN_FUZZY_LENGTH = 3;
 
 /**
- * True when `text` has a word whose first `token.length` characters are within
- * one edit of `token`. "cat" matches "Cakes" and "Caramel"; "xyz" matches nothing.
+ * True when `text` has a word that is one typo away from `token`.
+ *
+ * Two comparisons, because the two common mistakes look different:
+ *   - against the word's first `token.length` characters, which is what makes
+ *     "cat" reach "Cakes" (one substitution, "cak")
+ *   - against the whole word, which is what makes "choclate" reach
+ *     "Chocolate" (one transposition — the prefix comparison drifts out of
+ *     alignment and scores it as four edits instead of one)
  */
 export const fuzzyWordMatch = (text, token) => {
   if (token.length < MIN_FUZZY_LENGTH) return false;
-  return words(text).some((word) => {
-    const head = word.slice(0, Math.max(token.length, 1));
-    return editDistanceAtMostOne(token, head) <= 1;
-  });
+  return words(text).some(
+    (word) =>
+      editDistanceAtMostOne(token, word.slice(0, token.length)) <= 1 ||
+      editDistanceAtMostOne(token, word) <= 1,
+  );
 };
 
 /** Every token must land on at least one of the values. */
