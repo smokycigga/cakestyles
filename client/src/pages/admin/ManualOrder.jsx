@@ -297,6 +297,13 @@ export default function ManualOrder() {
                 products={b2bMode ? b2bProducts : products}
                 label={b2bMode ? "B2B product" : "Catalogue product"}
                 emptyLabel={b2bMode ? "No products have a B2B price set" : "No products match"}
+                emptyAction={
+                  b2bMode ? (
+                    <Link to="/admin/b2b" className="font-medium text-wine-700 hover:underline">
+                      Set wholesale prices →
+                    </Link>
+                  ) : null
+                }
                 renderMeta={(p) =>
                   b2bMode
                     ? b2bFromPrice(p) != null

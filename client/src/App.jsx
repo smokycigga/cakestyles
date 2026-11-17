@@ -27,6 +27,7 @@ const OrderDetail = lazy(() => import("./pages/admin/OrderDetail"));
 const ManualOrder = lazy(() => import("./pages/admin/ManualOrder"));
 const Products = lazy(() => import("./pages/admin/Products"));
 const ProductForm = lazy(() => import("./pages/admin/ProductForm"));
+const B2BCatalogue = lazy(() => import("./pages/admin/B2BCatalogue"));
 const MenuManager = lazy(() => import("./pages/admin/MenuManager"));
 const Customers = lazy(() => import("./pages/admin/Customers"));
 const CustomerDetail = lazy(() => import("./pages/admin/CustomerDetail"));
@@ -114,6 +115,7 @@ export default function App() {
         <Route path="products" element={<Products />} />
         <Route path="products/new" element={<ProductForm />} />
         <Route path="products/:id" element={<ProductForm />} />
+        <Route path="b2b" element={<B2BCatalogue />} />
         <Route path="menu" element={<MenuManager />} />
         <Route path="customers" element={<Customers />} />
         <Route path="customers/:id" element={<CustomerDetail />} />

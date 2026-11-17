@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, ShoppingBag, Cake, LayoutGrid, Users, MessageSquareHeart,
   Receipt, Wallet, FileBarChart, Settings, ShieldCheck, LogOut, Menu as MenuIcon, X,
-  ContactRound, ClipboardCheck, Megaphone,
+  ContactRound, ClipboardCheck, Megaphone, Handshake,
 } from "lucide-react";
 import { useAuth } from "../../store/AuthContext";
 
@@ -11,6 +11,7 @@ const NAV = [
   { to: "/admin", label: "Dashboard", icon: LayoutDashboard, end: true },
   { to: "/admin/orders", label: "Orders", icon: ShoppingBag },
   { to: "/admin/products", label: "Products", icon: Cake },
+  { to: "/admin/b2b", label: "B2B catalogue", icon: Handshake },
   { to: "/admin/menu", label: "Menu", icon: LayoutGrid },
   { to: "/admin/customers", label: "Customers", icon: Users },
   { to: "/admin/crm", label: "CRM", icon: ContactRound },

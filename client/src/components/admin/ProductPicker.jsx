@@ -12,7 +12,7 @@ import { filterBySearch } from "../../lib/search";
  *
  * `renderMeta(product)` supplies the right-hand price hint.
  */
-export default function ProductPicker({ products, label, emptyLabel, renderMeta, onPick, disabled }) {
+export default function ProductPicker({ products, label, emptyLabel, emptyAction, renderMeta, onPick, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -96,7 +96,10 @@ export default function ProductPicker({ products, label, emptyLabel, renderMeta,
 
           <div className="max-h-64 overflow-y-auto py-1" role="listbox">
             {results.length === 0 ? (
-              <p className="px-4 py-6 text-center text-xs text-cocoa-400">{emptyLabel}</p>
+              <div className="px-4 py-6 text-center">
+                <p className="text-xs text-cocoa-400">{emptyLabel}</p>
+                {emptyAction && <div className="mt-2 text-xs">{emptyAction}</div>}
+              </div>
             ) : (
               results.map((product, index) => (
                 <button

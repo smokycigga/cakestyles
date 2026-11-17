@@ -194,6 +194,13 @@ export default function Products() {
                 <Td className="font-medium" label="Price">
                   {inr(p.basePrice)}
                   {p.variants?.length > 0 && <span className="text-xs text-cocoa-400 ml-1">+{p.variants.length} var.</span>}
+                  {(p.b2bPrice != null || (p.variants || []).some((v) => v.b2bPrice != null)) && (
+                    <div className="mt-1">
+                      <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700" title="Has a wholesale price — see the B2B catalogue">
+                        B2B {p.b2bPrice != null ? inr(p.b2bPrice) : "sizes"}
+                      </span>
+                    </div>
+                  )}
                 </Td>
                 <Td label="Status"><Badge className={STATUS_META[p.status]}>{p.status}</Badge></Td>
                 <Td label="Availability"><Badge className={AVAIL_META[p.availability]}>{p.availability.replace("_", " ")}</Badge></Td>
