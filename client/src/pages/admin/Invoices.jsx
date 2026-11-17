@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Download, Search, Trash2, Pencil } from "lucide-react";
+import { AlertTriangle, Plus, Download, Search, Trash2, Pencil, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { errMsg, downloadFile } from "../../lib/api";
 import { inr, fmtDate } from "../../lib/format";
 import { validLines } from "../../lib/invoiceTotals";
-import { downloadInvoicePdf } from "../../lib/invoiceRender";
+import { downloadInvoicePdf, preloadInvoiceRenderer } from "../../lib/invoiceRender";
 import { INVOICE_STATUS_META, ORDER_STATUS_META } from "../../lib/meta";
 import { PageHeader, Spinner, Th, Td, TableWrap, EmptyState, Badge, Button, inputCls, Modal, Field, StatCard } from "../../components/admin/ui";
 import InvoiceLinesEditor from "../../components/admin/InvoiceLinesEditor";
@@ -24,6 +24,20 @@ export default function Invoices() {
   const [storeTax, setStoreTax] = useState({ enabled: false, rate: 0, label: "Tax" });
   const [form, setForm] = useState({ customerId: "", dueDate: "", taxRate: "", discount: "", notes: "" });
   const [lines, setLines] = useState([{ description: "", quantity: 1, unitPrice: "" }]);
+
+  // Warm the PDF engine up front — see invoiceRender.js for why. A stale tab
+  // (open across a deploy) can no longer fetch the old hashed chunk, and that
+  // is much better shown as a banner than as a toast on a failed click.
+  const [rendererReady, setRendererReady] = useState(null);
+  // Invoice ids with a download in flight, so repeated clicks don't fan out
+  // into parallel renders that each raise their own error.
+  const inFlight = useRef(new Set());
+
+  const warmRenderer = () => {
+    setRendererReady(null);
+    preloadInvoiceRenderer().then(setRendererReady);
+  };
+  useEffect(warmRenderer, []);
 
   const openCreate = () => {
     api.get("/customers").then((r) => setCustomers(r.data.customers)).catch(() => {});
@@ -111,11 +125,16 @@ export default function Invoices() {
 
   // List rows omit line items, so fetch the full invoice before rendering the PDF.
   const downloadPdf = async (inv) => {
+    if (inFlight.current.has(inv._id)) return;
+    inFlight.current.add(inv._id);
     try {
       const { data } = await api.get(`/invoices/${inv._id}`);
       await downloadInvoicePdf(data.invoice);
     } catch (err) {
-      toast.error(errMsg(err));
+      toast.error(errMsg(err), { id: "invoice-download" });
+      if (err?.code === "RENDERER_UNAVAILABLE") setRendererReady(false);
+    } finally {
+      inFlight.current.delete(inv._id);
     }
   };
 
@@ -157,6 +176,22 @@ export default function Invoices() {
           </>
         }
       />
+
+      {rendererReady === false && (
+        <div className="mb-5 flex flex-wrap items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-amber-900">PDF downloads aren't available on this page right now</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              The invoice tool couldn't load — usually because the site was updated while this tab was open.
+              Reload to pick up the new version. Invoices are unaffected.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            <RefreshCw className="w-4 h-4" /> Reload
+          </Button>
+        </div>
+      )}
 
       {invoices && invoices.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-5">

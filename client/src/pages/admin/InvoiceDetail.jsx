@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Download, FileImage, Pencil, Plus } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Download, FileImage, Pencil, Plus, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { errMsg } from "../../lib/api";
 import { inr, fmtDate } from "../../lib/format";
 import { validLines } from "../../lib/invoiceTotals";
-import { downloadInvoicePdf, downloadInvoicePng } from "../../lib/invoiceRender";
+import { downloadInvoicePdf, downloadInvoicePng, preloadInvoiceRenderer } from "../../lib/invoiceRender";
 import { INVOICE_STATUS_META, PAYMENT_METHOD_LABELS } from "../../lib/meta";
 import { PageHeader, Spinner, Badge, Button, Field, inputCls, Modal } from "../../components/admin/ui";
 import InvoiceLinesEditor from "../../components/admin/InvoiceLinesEditor";
@@ -32,6 +32,20 @@ export default function InvoiceDetail() {
   // bills, so repairing the link matters more than it looks.
   const [linkable, setLinkable] = useState([]);
   const [linkTo, setLinkTo] = useState("");
+
+  // The PDF engine is a separate hashed chunk. Warm it on mount so the click is
+  // instant, and so a failed fetch shows up as a banner now instead of as a
+  // toast that vanishes after four seconds. null = still loading.
+  const [rendererReady, setRendererReady] = useState(null);
+  // One download at a time. Without this, five impatient clicks started five
+  // concurrent renders and produced five identical error toasts.
+  const downloading = useRef(false);
+
+  const warmRenderer = () => {
+    setRendererReady(null);
+    preloadInvoiceRenderer().then(setRendererReady);
+  };
+  useEffect(warmRenderer, []);
 
   const load = () => api.get(`/invoices/${id}`)
     .then((r) => {
@@ -157,11 +171,18 @@ export default function InvoiceDetail() {
 
   // PDF + PNG generated client-side via the shared renderer (works on Vercel too).
   const download = async (kind) => {
+    if (downloading.current) return; // a second click while one is in flight is a no-op
+    downloading.current = true;
     try {
       if (kind === "pdf") await downloadInvoicePdf(invoice);
       else await downloadInvoicePng(invoice);
     } catch (err) {
-      toast.error(errMsg(err));
+      // Stable id: repeated failures collapse into a single toast instead of
+      // stacking one per click.
+      toast.error(errMsg(err), { id: "invoice-download" });
+      if (err?.code === "RENDERER_UNAVAILABLE") setRendererReady(false);
+    } finally {
+      downloading.current = false;
     }
   };
 
@@ -170,6 +191,22 @@ export default function InvoiceDetail() {
       <Link to="/admin/invoices" className="inline-flex items-center gap-1 text-sm text-cocoa-400 hover:text-wine-700 mb-4">
         <ArrowLeft className="w-4 h-4" /> All invoices
       </Link>
+
+      {rendererReady === false && (
+        <div className="mb-4 flex flex-wrap items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-amber-900">Downloading isn't available on this page right now</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              The invoice tool couldn't load — usually because the site was updated while this tab was open.
+              Reload to pick up the new version. The invoice itself is safe; nothing was lost.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            <RefreshCw className="w-4 h-4" /> Reload
+          </Button>
+        </div>
+      )}
 
       <PageHeader
         title={invoice.invoiceNumber}
