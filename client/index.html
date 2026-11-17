@@ -11,11 +11,10 @@
     />
     <title>Cakestyles — Handcrafted Cakes & Bakes</title>
 
-    <!-- Fonts are self-hosted (see scripts/fetch-fonts.py).
-         They used to come from fonts.googleapis.com, which cost two extra
-         origins and a render-blocking stylesheet: measured at ~1.6s before
-         first paint on a throttled 4G phone. Same files, same origin now. -->
-    <link rel="stylesheet" href="/fonts/fonts.css" />
+    <!-- Fonts are self-hosted and bundled into the app's CSS (see
+         scripts/fetch-fonts.py). They used to come from fonts.googleapis.com,
+         which cost two extra origins and a render-blocking stylesheet:
+         measured at ~1.6s before first paint on a throttled 4G phone. -->
     <link rel="preload" as="font" type="font/woff2" href="/fonts/poppins-normal-400.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/playfair-display-normal-400-900.woff2" crossorigin />
 
