@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Clock3, MapPin, Minus, Plus, ShoppingBag, Store, Tag, Trash2, Truck, X } from "lucide-react";
+import { ArrowLeft, Clock3, MapPin, ShoppingBag, Store, Tag, Trash2, Truck, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useCart } from "../store/CartContext";
 import { useSettings } from "../store/SettingsContext";
@@ -8,6 +8,7 @@ import { useFulfilment } from "../store/FulfilmentContext";
 import { inr } from "../lib/format";
 import { sizedImage } from "../lib/productImage";
 import SlotPicker from "../components/public/SlotPicker";
+import QuantityStepper from "../components/public/QuantityStepper";
 import { Placeholder } from "../components/public/ProductCard";
 
 const prettyDate = (value) => value ? new Date(`${value}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "Choose date";
@@ -46,7 +47,7 @@ export default function Cart() {
         {cart.map((item) => {
           const itemId = itemKey(item);
           const addOnSum = (item.addOns || []).reduce((sum, addOn) => sum + addOn.price, 0);
-          return <article key={itemId} className="py-5"><div className="flex gap-4">{item.image ? <img src={sizedImage(item.image, 200)} alt={item.name} loading="lazy" decoding="async" className="h-20 w-20 rounded-xl object-cover" /> : <Placeholder name={item.name} className="h-20 w-20 rounded-xl" />}<div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><h2 className="font-medium text-cocoa-900">{item.name}</h2><p className="mt-1 text-xs text-cocoa-400">{prettyDate(date)}, {slot || "slot not selected"}</p>{item.addOns?.length > 0 && <p className="mt-1 text-xs text-wine-600">+ {item.addOns.map((addOn) => addOn.name).join(", ")}</p>}</div><button onClick={() => removeItem(itemId)} className="p-1.5 text-cocoa-400 hover:text-wine-700" aria-label="Remove"><Trash2 className="h-4 w-4" /></button></div><div className="mt-4 flex items-center justify-between"><div className="flex items-center border border-wine-200 bg-white"><button onClick={() => setQuantity(itemId, item.quantity - 1)} className="p-2"><Minus className="h-3.5 w-3.5" /></button><span className="min-w-10 px-1 text-center text-sm">{item.quantity}</span><button onClick={() => setQuantity(itemId, item.quantity + 1)} className="p-2"><Plus className="h-3.5 w-3.5" /></button></div><span className="font-semibold text-cocoa-900">{inr((item.unitPrice + addOnSum) * item.quantity)}</span></div></div></div></article>;
+          return <article key={itemId} className="py-5"><div className="flex gap-4">{item.image ? <img src={sizedImage(item.image, 200)} alt={item.name} loading="lazy" decoding="async" className="h-20 w-20 rounded-xl object-cover" /> : <Placeholder name={item.name} className="h-20 w-20 rounded-xl" />}<div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><h2 className="font-medium text-cocoa-900">{item.name}</h2><p className="mt-1 text-xs text-cocoa-400">{prettyDate(date)}, {slot || "slot not selected"}</p>{item.addOns?.length > 0 && <p className="mt-1 text-xs text-wine-600">+ {item.addOns.map((addOn) => addOn.name).join(", ")}</p>}</div><button onClick={() => removeItem(itemId)} className="p-1.5 text-cocoa-400 hover:text-wine-700" aria-label="Remove"><Trash2 className="h-4 w-4" /></button></div><div className="mt-4 flex items-center justify-between"><QuantityStepper compact value={item.quantity} onChange={(next) => setQuantity(itemId, next)} /><span className="font-semibold text-cocoa-900">{inr((item.unitPrice + addOnSum) * item.quantity)}</span></div></div></div></article>;
         })}
       </div>
 

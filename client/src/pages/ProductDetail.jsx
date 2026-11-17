@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { Minus, Plus, ShoppingCart, ArrowLeft, Clock3, Store, Truck } from "lucide-react";
+import { ShoppingCart, ArrowLeft, Clock3, Store, Truck } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../lib/api";
 import { inr } from "../lib/format";
@@ -8,6 +8,7 @@ import { productImage, imageSrcSet } from "../lib/productImage";
 import { useCart } from "../store/CartContext";
 import { useFulfilment } from "../store/FulfilmentContext";
 import SlotPicker from "../components/public/SlotPicker";
+import QuantityStepper from "../components/public/QuantityStepper";
 import { Placeholder } from "../components/public/ProductCard";
 
 export default function ProductDetail() {
@@ -143,7 +144,7 @@ export default function ProductDetail() {
 
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-wine-100 bg-cream-50/95 p-3 backdrop-blur">
         <div className="mx-auto flex max-w-xl gap-3">
-          <div className="flex items-center rounded-xl border border-wine-200 bg-white"><button onClick={() => { setQuantity(Math.max(1, quantity - 1)); setAdded(false); }} className="p-3" aria-label="Decrease"><Minus className="h-4 w-4" /></button><span className="min-w-10 px-1 text-center text-sm font-semibold">{quantity}</span><button onClick={() => { setQuantity(quantity + 1); setAdded(false); }} className="p-3" aria-label="Increase"><Plus className="h-4 w-4" /></button></div>
+          <QuantityStepper value={quantity} onChange={(next) => { setQuantity(next); setAdded(false); }} />
           <button onClick={handlePrimary} disabled={unavailable} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:bg-cocoa-400">
             <ShoppingCart className="h-4 w-4" /> {unavailable ? "Unavailable" : added ? "Go to cart" : `Add to cart · ${inr(lineTotal)}`}
           </button>

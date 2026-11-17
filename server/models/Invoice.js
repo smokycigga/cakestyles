@@ -16,7 +16,8 @@ const invoiceSchema = new mongoose.Schema(
       {
         product: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
         description: { type: String, required: true },
-        quantity: { type: Number, required: true, min: 1 },
+        // Fractions are legitimate: half a cake, 1.5 kg, a third of a tray.
+        quantity: { type: Number, required: true, min: 0.001 },
         unitPrice: { type: Number, required: true, min: 0 },
         amount: { type: Number, required: true },
         isCustom: { type: Boolean, default: false },

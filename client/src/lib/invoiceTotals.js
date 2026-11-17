@@ -70,7 +70,9 @@ export const validLines = (lines) =>
       // disappear from every invoice the moment it was saved.
       ...(line.product ? { product: String(line.product._id || line.product) } : {}),
       description: line.description.trim(),
-      quantity: Math.max(1, Number(line.quantity) || 1),
+      // Fractions are allowed (half a cake, 1.5 kg), so the floor is "more than
+      // zero" rather than one whole item. Three decimals keeps float noise out.
+      quantity: Math.max(0.001, Math.round((Number(line.quantity) || 1) * 1000) / 1000),
       unitPrice: round2(Number(line.unitPrice) || 0),
       isCustom: Boolean(line.isCustom),
     }));

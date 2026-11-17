@@ -52,7 +52,8 @@ const orderSchema = new mongoose.Schema(
         name: { type: String, required: true },
         variantName: { type: String, default: "" },
         unitPrice: { type: Number, required: true, min: 0 },
-        quantity: { type: Number, required: true, min: 1 },
+        // Fractions are legitimate: half a cake, 1.5 kg, a third of a tray.
+        quantity: { type: Number, required: true, min: 0.001 },
         addOns: [{ name: String, price: Number }],
         lineTotal: { type: Number, required: true, min: 0 },
         isCustom: { type: Boolean, default: false },

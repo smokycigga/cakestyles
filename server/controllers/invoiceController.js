@@ -14,11 +14,12 @@ import { computeInvoiceTotals, invoiceTotalsFromOrder, paymentStatusFor, round2,
 import { invoiceStatusFor } from "../utils/paymentSync.js";
 import { notifyInvoiceIssued } from "../utils/notify.js";
 import { sendCSV } from "../utils/csv.js";
+import { quantitySchema } from "../utils/quantity.js";
 
 const lineSchema = z.object({
   product: z.string().optional(),
   description: z.string().min(1),
-  quantity: z.number().int().min(1),
+  quantity: quantitySchema,
   unitPrice: z.number().min(0),
   isCustom: z.boolean().optional(),
 });
@@ -158,7 +159,7 @@ const relinkOrder = async (invoice, orderId) => {
 const updateLineSchema = z.object({
   product: z.string().optional(),
   description: z.string().min(1),
-  quantity: z.number().int().min(1),
+  quantity: quantitySchema,
   unitPrice: z.number().min(0),
   isCustom: z.boolean().optional(),
 });

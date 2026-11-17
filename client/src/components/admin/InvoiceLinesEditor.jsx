@@ -71,7 +71,8 @@ export default function InvoiceLinesEditor({
               {i === 0 && <span className="text-[11px] text-cocoa-400">Qty</span>}
               <input
                 type="number"
-                min="1"
+                min="0.001"
+                step="0.5"
                 value={line.quantity}
                 disabled={readOnly}
                 onChange={(e) => setLine(i, { quantity: e.target.value })}

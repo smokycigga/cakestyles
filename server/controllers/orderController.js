@@ -19,6 +19,7 @@ import { writeAudit } from "../utils/audit.js";
 import { nextOrderNumber } from "../utils/numbers.js";
 import { computeTotals, lineTotal, sumPayments, round2, paymentStatusFor } from "../utils/pricing.js";
 import { normalizePhone } from "../utils/misc.js";
+import { quantitySchema } from "../utils/quantity.js";
 import { syncPaymentToInvoice, cancelInvoiceForCancelledOrder } from "../utils/paymentSync.js";
 import { istDateString, startOfIstDay, istToUtc } from "../utils/dates.js";
 import { notifyOrderPlaced, notifyOrderStatus } from "../utils/notify.js";
@@ -36,9 +37,10 @@ const objectIdSchema = z.string().refine(isMongoObjectId, "Must be a valid Mongo
 const catalogItemSchema = z.object({
   productId: objectIdSchema,
   variantName: z.string().optional(),
-  // No upper bound: the shop takes large celebration and bulk orders, so the
-  // only rule is that a line holds a whole number of items.
-  quantity: z.number().int().min(1),
+  // No upper bound on whole items — the shop takes large celebration and bulk
+  // orders — but a line may hold a fraction: half a cake, 1.5 kg, a third of a
+  // tray. Money is rounded; the quantity keeps up to three decimals.
+  quantity: quantitySchema,
   addOns: z.array(z.string()).optional(),
   notes: z.string().max(500).optional(),
   useB2bPrice: z.boolean().optional(),
@@ -47,7 +49,7 @@ const catalogItemSchema = z.object({
 const customItemSchema = z.object({
   name: z.string().min(1),
   unitPrice: z.number().min(0),
-  quantity: z.number().int().min(1),
+  quantity: quantitySchema,
   notes: z.string().max(500).optional(),
 });
 

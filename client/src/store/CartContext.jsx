@@ -3,6 +3,18 @@ import { createContext, useContext, useEffect, useMemo, useState } from "react";
 
 const CartContext = createContext(null);
 
+// Half a cake is a real order, so quantities are not integers. Three decimals
+// is finer than any bakery scale, and stops 0.1 + 0.2 turning into 0.30000000000000004.
+export const QUANTITY_STEP = 0.5;
+export const roundQuantity = (value) => Math.round((Number(value) || 0) * 1000) / 1000;
+
+/** Clamp anything the UI can produce into a usable line quantity. */
+export const normalizeQuantity = (value, fallback = 1) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return roundQuantity(parsed);
+};
+
 const key = (item) => {
   const addOnNames = (item.addOns || []).map((addOn) => addOn.name).sort();
   return `${item.productId}|${item.variantName || ""}|${addOnNames.join(",")}|${item.notes || ""}`;
@@ -33,20 +45,23 @@ export const CartProvider = ({ children }) => {
       if (existing) {
         return current.map((entry) =>
           key(entry) === itemKey
-            ? { ...entry, quantity: entry.quantity + item.quantity }
+            ? { ...entry, quantity: roundQuantity(entry.quantity + normalizeQuantity(item.quantity)) }
             : entry,
         );
       }
-      return [...current, { ...item, quantity: Math.max(1, item.quantity) }];
+      return [...current, { ...item, quantity: normalizeQuantity(item.quantity) }];
     });
   };
 
+  // A line is dropped only when the quantity reaches zero. Anything else —
+  // including 0.5 — stays in the cart.
   const setQuantity = (itemKey, quantity) => {
+    const next = Number(quantity);
     setCart((current) =>
-      quantity <= 0
+      !Number.isFinite(next) || next <= 0
         ? current.filter((entry) => key(entry) !== itemKey)
         : current.map((entry) =>
-            key(entry) === itemKey ? { ...entry, quantity } : entry,
+            key(entry) === itemKey ? { ...entry, quantity: roundQuantity(next) } : entry,
           ),
     );
   };
