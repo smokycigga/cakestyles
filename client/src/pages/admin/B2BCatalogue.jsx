@@ -251,8 +251,8 @@ export default function B2BCatalogue() {
               className={`${inputCls} w-24`}
               aria-label="Discount percent"
             />
-            <Button onClick={fillUnpriced} disabled={filling}>
-              <Sparkles className="w-4 h-4" /> {filling ? "Pricing…" : `Fill ${stats.total - stats.priced}`}
+            <Button onClick={fillUnpriced} disabled={filling} className="whitespace-nowrap">
+              <Sparkles className="w-4 h-4" /> {filling ? "Pricing…" : `Fill ${stats.total - stats.priced} unpriced`}
             </Button>
           </div>
         </div>
