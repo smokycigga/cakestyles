@@ -53,7 +53,10 @@ export default function QuantityStepper({
       <input
         type="number"
         inputMode="decimal"
-        step={step}
+        // The buttons move in `step`; the field itself takes any positive
+        // number. `step={step}` made 0.75 "invalid" (min 0.5 + 0.5n), which
+        // contradicts the whole point of the editable field.
+        step="any"
         min={min}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}

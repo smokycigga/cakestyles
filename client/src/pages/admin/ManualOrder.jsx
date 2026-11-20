@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Plus, Trash2, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import api, { errMsg } from "../../lib/api";
-import { inr, daysFromNow } from "../../lib/format";
+import { inr, daysFromNow, normalizeQuantity } from "../../lib/format";
 import { SOURCE_LABELS, PAYMENT_METHOD_LABELS } from "../../lib/meta";
 import { orderTotalsPreview } from "../../lib/invoiceTotals";
 import { PageHeader, Button, Field, inputCls, Badge } from "../../components/admin/ui";
@@ -376,7 +376,12 @@ export default function ManualOrder() {
                   </div>
                   <div className="sm:col-span-1">
                     <span className="text-[11px] text-cocoa-400">Qty</span>
-                    <input type="number" min="0.001" step="0.5" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value })} className={inputCls} />
+                    {/* step="any" — the browser validates number inputs against
+                        min + n*step, so step="0.5" with min="0.001" only accepted
+                        0.501 / 1.001 / … and rejected plain 1 or 2. Any positive
+                        value is a legal line quantity: whole numbers, halves,
+                        0.75 kg. The server rounds to 3 decimals. */}
+                    <input type="number" inputMode="decimal" min="0.001" step="any" value={l.quantity} onChange={(e) => updateLine(i, { quantity: e.target.value })} onBlur={(e) => updateLine(i, { quantity: normalizeQuantity(e.target.value) })} className={inputCls} />
                   </div>
                   <div className="sm:col-span-2">
                     <span className="text-[11px] text-cocoa-400">Line total</span>

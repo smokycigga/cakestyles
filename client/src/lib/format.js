@@ -15,3 +15,13 @@ export const titleize = (s) =>
   String(s || "")
     .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+
+// A line quantity is any positive number with up to three decimals — a whole
+// cake, half a cake, 0.75 kg. Blank, zero or junk snaps back to `fallback` so
+// a cleared field can never submit an impossible line. Mirrors
+// server/utils/quantity.js.
+export const normalizeQuantity = (raw, fallback = 1) => {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.round(n * 1000) / 1000;
+};

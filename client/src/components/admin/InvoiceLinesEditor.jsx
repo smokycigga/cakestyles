@@ -1,5 +1,5 @@
 import { computeTotals } from "../../lib/invoiceTotals";
-import { inr } from "../../lib/format";
+import { inr, normalizeQuantity } from "../../lib/format";
 import { Button, Field, inputCls } from "./ui";
 import { Plus } from "lucide-react";
 
@@ -69,13 +69,20 @@ export default function InvoiceLinesEditor({
             </div>
             <div className="col-span-4 sm:col-span-2">
               {i === 0 && <span className="text-[11px] text-cocoa-400">Qty</span>}
+              {/* step="any": the browser checks min + n*step, so the old
+                  min="0.001" step="0.5" pair only allowed 0.501 / 1.001 / …
+                  and rejected whole numbers (1, 2) and 0.75. Fractions and
+                  integers are both valid quantities; the server rounds to
+                  three decimals. */}
               <input
                 type="number"
+                inputMode="decimal"
                 min="0.001"
-                step="0.5"
+                step="any"
                 value={line.quantity}
                 disabled={readOnly}
                 onChange={(e) => setLine(i, { quantity: e.target.value })}
+                onBlur={(e) => setLine(i, { quantity: normalizeQuantity(e.target.value) })}
                 className={inputCls}
               />
             </div>
