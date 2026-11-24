@@ -1,4 +1,5 @@
 import { Component } from "react";
+import { isChunkError } from "../lib/lazyRoute";
 
 /**
  * Last line of defence for a route whose chunk could not be loaded.
@@ -25,7 +26,7 @@ export default class ChunkErrorBoundary extends Component {
     if (!error) return this.props.children;
 
     const message = String(error?.message || error || "");
-    const stale = /dynamically imported module|Importing a module script failed|Loading chunk/i.test(message);
+    const stale = isChunkError(error) || /Loading chunk/i.test(message);
 
     return (
       <div className="flex min-h-screen items-center justify-center bg-cream-50 px-5">

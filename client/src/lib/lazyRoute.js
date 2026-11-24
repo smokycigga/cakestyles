@@ -15,8 +15,11 @@ import { lazy } from "react";
 const RETRY_KEY = "cakestyles:chunk-retry-at";
 const RETRY_WINDOW_MS = 15000;
 
+// A stale chunk can fail three ways: a clean 404, a 200 carrying index.html
+// (what the SPA rewrite used to do, caught by the MIME check), or an offline
+// network. All three are fixed by reloading, so all three count.
 const CHUNK_ERROR =
-  /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|dynamically imported module/i;
+  /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|dynamically imported module|Failed to load module script|Expected a JavaScript module script|MIME type of ["']?text\/html/i;
 
 /** True when the failure is "this chunk is gone / offline", not a bug in the page. */
 export const isChunkError = (error) =>
