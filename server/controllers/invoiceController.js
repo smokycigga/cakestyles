@@ -234,10 +234,17 @@ export const list = [protect, requirePerm("finance:read"), async (req, res) => {
     filter.balanceDue = { $gt: 0 };
   }
 
+  // The list only renders a summary row, but every document also carries its
+  // full lines[] and payments[] history. At 300 invoices that was megabytes of
+  // JSON for numbers the table never shows, and mongoose hydrated every one of
+  // those subdocuments before serialising them. Select what the row uses, skip
+  // hydration, and the list request stops competing with the page's own code.
   const invoices = await Invoice.find(filter)
+    .select("invoiceNumber customerSnapshot.name status total amountPaid balanceDue dueDate createdAt order")
     .populate("order", "orderNumber")
     .sort({ createdAt: -1 })
-    .limit(300);
+    .limit(300)
+    .lean();
   res.json({ invoices });
 }];
 

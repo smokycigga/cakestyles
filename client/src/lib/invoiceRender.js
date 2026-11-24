@@ -53,6 +53,26 @@ export const preloadInvoiceRenderer = () =>
     () => false
   );
 
+/**
+ * Warm the engine only once the page is idle.
+ *
+ * The engine plus its jsPDF / canvas dependencies is roughly 280 kB gzipped.
+ * Fetching that on mount put it in a straight race with the invoice list
+ * request, so on a phone the list — the only thing the screen is for — arrived
+ * last, behind a megabyte of PDF code nobody had asked to use yet. Idle
+ * warming keeps the "already loaded when you click Download" benefit without
+ * paying for it in the critical path. A click still loads it on demand.
+ */
+export const preloadInvoiceRendererWhenIdle = () =>
+  new Promise((resolve) => {
+    const warm = () => preloadInvoiceRenderer().then(resolve);
+    if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+      window.requestIdleCallback(warm, { timeout: 6000 });
+    } else {
+      setTimeout(warm, 2000);
+    }
+  });
+
 export function fetchStoreInfo() {
   return loadRenderer().then((m) => m.fetchStoreInfo());
 }

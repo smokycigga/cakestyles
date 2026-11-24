@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import api, { errMsg, downloadFile } from "../../lib/api";
 import { inr, fmtDate } from "../../lib/format";
 import { validLines } from "../../lib/invoiceTotals";
-import { downloadInvoicePdf, preloadInvoiceRenderer } from "../../lib/invoiceRender";
+import { downloadInvoicePdf, preloadInvoiceRendererWhenIdle } from "../../lib/invoiceRender";
 import { INVOICE_STATUS_META, ORDER_STATUS_META } from "../../lib/meta";
 import { PageHeader, Spinner, Th, Td, TableWrap, EmptyState, Badge, Button, inputCls, Modal, Field, StatCard } from "../../components/admin/ui";
 import InvoiceLinesEditor from "../../components/admin/InvoiceLinesEditor";
@@ -35,7 +35,7 @@ export default function Invoices() {
 
   const warmRenderer = () => {
     setRendererReady(null);
-    preloadInvoiceRenderer().then(setRendererReady);
+    preloadInvoiceRendererWhenIdle().then(setRendererReady);
   };
   useEffect(warmRenderer, []);
 
