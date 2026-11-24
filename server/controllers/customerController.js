@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import Customer from "../models/Customer.js";
+import { escapeSearchRegex } from "../utils/search.js";
 import Order from "../models/Order.js";
 import Invoice from "../models/Invoice.js";
 import Enquiry from "../models/Enquiry.js";
@@ -34,7 +35,7 @@ export const list = [protect, requirePerm("customers:read"), async (req, res) =>
   const filter = { active: true };
   if (req.query.tag) filter.tags = req.query.tag;
   if (req.query.search) {
-    const s = new RegExp(req.query.search, "i");
+    const s = new RegExp(escapeSearchRegex(req.query.search), "i");
     filter.$or = [{ name: s }, { phone: s }, { email: s }];
   }
 

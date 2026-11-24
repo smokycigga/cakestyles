@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import Expense from "../models/Expense.js";
+import { escapeSearchRegex } from "../utils/search.js";
 import { EXPENSE_CATEGORIES, PAYMENT_METHODS } from "../config/constants.js";
 import { protect, requirePerm } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -23,7 +24,7 @@ const expenseSchema = z.object({
 const buildFilter = (query) => {
   const filter = {};
   if (query.category) filter.category = query.category;
-  if (query.vendor) filter.vendor = new RegExp(query.vendor, "i");
+  if (query.vendor) filter.vendor = new RegExp(escapeSearchRegex(query.vendor), "i");
   if (query.paymentMethod) filter.paymentMethod = query.paymentMethod;
   if (query.from || query.to) {
     filter.date = {};

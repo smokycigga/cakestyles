@@ -1,6 +1,7 @@
 import express from "express";
 import AuditLog from "../models/AuditLog.js";
 import { protect, requirePerm } from "../middleware/auth.js";
+import { escapeSearchRegex } from "../utils/search.js";
 
 const router = express.Router();
 
@@ -9,8 +10,8 @@ router.get("/", protect, requirePerm("audit:read"), async (req, res) => {
   if (req.query.entity) filter.entity = req.query.entity;
   if (req.query.search) {
     filter.$or = [
-      { action: new RegExp(req.query.search, "i") },
-      { "actor.name": new RegExp(req.query.search, "i") },
+      { action: new RegExp(escapeSearchRegex(req.query.search), "i") },
+      { "actor.name": new RegExp(escapeSearchRegex(req.query.search), "i") },
     ];
   }
 

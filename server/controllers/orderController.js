@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { z } from "zod";
 
 import Order from "../models/Order.js";
+import { escapeSearchRegex } from "../utils/search.js";
 import Product from "../models/Product.js";
 import Customer from "../models/Customer.js";
 import Setting from "../models/Setting.js";
@@ -307,8 +308,21 @@ const distanceKm = (point) => {
   return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-const calculateDeliveryFee = (settings, fulfilment) => {
+const calculateDeliveryFee = (settings, fulfilment, itemsSubtotal = 0) => {
   if (!settings.delivery?.enabled) return 0;
+
+  // "Free over ₹X" was editable in Settings and read by nothing, so the promise
+  // on that screen was never kept. 0 keeps meaning "never free", which is what
+  // the label says and what every store that has not touched it expects.
+  const freeOver = Number(settings.delivery.freeOver) || 0;
+  if (freeOver > 0 && itemsSubtotal >= freeOver) return 0;
+
+  // A configured flat fee wins over the per-km rate: the field is labelled
+  // "Delivery fee (₹)", not "per km". Left at 0, distance pricing applies
+  // exactly as before.
+  const flatFee = Number(settings.delivery.fee) || 0;
+  if (flatFee > 0) return round2(flatFee);
+
   // Round to the same 2 dp the customer was quoted from before rounding up:
   // ceiling the raw float charged an extra km whenever the distance shown as
   // "7.00 km" was really 7.0000001 km.
@@ -400,9 +414,12 @@ export const checkout = [validate(checkoutSchema), async (req, res) => {
   validateFulfilment(body.fulfilment, settings, itemsWithPrep);
 
   const taxRate = settings.tax.enabled ? settings.tax.rate : 0;
+  // "Free delivery over ₹X" is judged on what the basket is worth, so the
+  // subtotal has to exist before the fee does.
+  const itemsSubtotal = round2(items.reduce((sum, item) => sum + (Number(item.lineTotal) || 0), 0));
   const totals = computeTotals({
     items,
-    deliveryFee: body.fulfilment.type === "delivery" ? calculateDeliveryFee(settings, body.fulfilment) : 0,
+    deliveryFee: body.fulfilment.type === "delivery" ? calculateDeliveryFee(settings, body.fulfilment, itemsSubtotal) : 0,
     taxRate,
     taxInclusive: settings.tax.inclusive,
   });
@@ -484,7 +501,7 @@ export const list = [protect, requirePerm("orders:read"), async (req, res) => {
   if (req.query.source) filter.source = req.query.source;
   if (req.query.paymentStatus) filter["payment.status"] = req.query.paymentStatus;
   if (req.query.search) {
-    const s = new RegExp(req.query.search, "i");
+    const s = new RegExp(escapeSearchRegex(req.query.search), "i");
     filter.$or = [
       { orderNumber: s },
       { "customerSnapshot.name": s },

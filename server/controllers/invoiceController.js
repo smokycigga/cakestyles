@@ -2,6 +2,7 @@ import { z } from "zod";
 import mongoose from "mongoose";
 
 import Invoice from "../models/Invoice.js";
+import { escapeSearchRegex } from "../utils/search.js";
 import Order from "../models/Order.js";
 import Customer from "../models/Customer.js";
 import Setting from "../models/Setting.js";
@@ -226,7 +227,7 @@ export const list = [protect, requirePerm("finance:read"), async (req, res) => {
   const filter = {};
   if (req.query.status) filter.status = req.query.status;
   if (req.query.search) {
-    const s = new RegExp(req.query.search, "i");
+    const s = new RegExp(escapeSearchRegex(req.query.search), "i");
     filter.$or = [{ invoiceNumber: s }, { "customerSnapshot.name": s }, { "customerSnapshot.phone": s }];
   }
   if (req.query.outstanding === "1") {
