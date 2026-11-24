@@ -30,8 +30,18 @@ export default function Checkout() {
     return [...new Set(available)];
   }, [settings]);
   const selectedPayment = methods.includes(paymentMethod) ? paymentMethod : methods[0] || "upi";
-  const deliveryFee = type === "delivery" && settings?.delivery?.enabled
-    ? Math.ceil(Number(address.distanceKm) || 0) * 18
+  // Mirrors calculateDeliveryFee on the server: the free-over threshold, then a
+  // configured flat fee, then the per-km rate. These have to agree or the
+  // customer is quoted one number and charged another.
+  const delivery = settings?.delivery || {};
+  const freeOver = Number(delivery.freeOver) || 0;
+  const flatFee = Number(delivery.fee) || 0;
+  const deliveryFee = type === "delivery" && delivery.enabled
+    ? freeOver > 0 && totalPrice >= freeOver
+      ? 0
+      : flatFee > 0
+        ? flatFee
+        : Math.ceil(Number(address.distanceKm) || 0) * 18
     : 0;
   const tax = settings?.tax?.enabled && !settings.tax.inclusive ? (totalPrice * settings.tax.rate) / 100 : 0;
   const total = totalPrice + deliveryFee + tax;

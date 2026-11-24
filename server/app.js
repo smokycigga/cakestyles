@@ -38,10 +38,40 @@ app.use((req, res, next) => {
   next();
 });
 
+// CORS with an actual allowlist.
+//
+// `origin: process.env.CLIENT_URL || true` reflected whatever Origin the caller
+// sent, together with credentials: true — so any site could call the API from a
+// visitor's browser and read the response. Auth is a Bearer token rather than a
+// cookie, which is the only reason that was not worse.
+//
+// The storefront and the API share a host, so the common case needs no CORS at
+// all. An explicit CLIENT_URL (comma-separated) still wins, which is what a
+// split frontend or a dev server on another port needs.
+const allowedOrigins = (process.env.CLIENT_URL || "")
+  .split(",")
+  .map((value) => value.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
 app.use(
-  cors({
-    origin: process.env.CLIENT_URL || true,
-    credentials: true,
+  cors((req, callback) => {
+    const origin = req.headers.origin;
+    let allow = true;
+
+    if (origin) {
+      if (allowedOrigins.length > 0) {
+        allow = allowedOrigins.includes(origin);
+      } else {
+        // No allowlist configured: allow the site's own host only.
+        try {
+          allow = new URL(origin).host === req.headers.host;
+        } catch {
+          allow = false;
+        }
+      }
+    }
+
+    callback(null, { origin: allow, credentials: true });
   })
 );
 app.use(express.json({ limit: "3mb" }));

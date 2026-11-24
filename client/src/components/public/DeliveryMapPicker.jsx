@@ -30,12 +30,19 @@ export default function DeliveryMapPicker({ value, onChange }) {
     return () => { script.onload = null; };
   }, []);
 
+  // The map listeners bind once per mount, so anything they read from props is
+  // frozen at that moment. That used to mean picking a point overwrote a city
+  // the customer had already typed with the empty value from the first render.
+  // A ref always hands them the current value instead.
+  const latest = useRef({ value, onChange });
+  latest.current = { value, onChange };
+
   /* Map instance listeners intentionally bind to the selected point once per map mount. */
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!ready || !mapRef.current || !window.google?.maps) return undefined;
-    const selected = value.latitude && value.longitude ? { lat: value.latitude, lng: value.longitude } : STORE_ORIGIN;
-    const map = new window.google.maps.Map(mapRef.current, { center: selected, zoom: value.latitude ? 14 : 11, mapTypeControl: false, streetViewControl: false, fullscreenControl: false, clickableIcons: false });
+    const start = latest.current.value;
+    const selected = start.latitude && start.longitude ? { lat: start.latitude, lng: start.longitude } : STORE_ORIGIN;
+    const map = new window.google.maps.Map(mapRef.current, { center: selected, zoom: start.latitude ? 14 : 11, mapTypeControl: false, streetViewControl: false, fullscreenControl: false, clickableIcons: false });
     markerRef.current = new window.google.maps.Marker({ map, position: selected, draggable: true, title: "Delivery location" });
     const select = (latLng) => {
       const point = { lat: latLng.lat(), lng: latLng.lng() };
@@ -44,7 +51,15 @@ export default function DeliveryMapPicker({ value, onChange }) {
       geocoder.geocode({ location: point }, (results, status) => {
         const components = status === "OK" && results?.[0]?.address_components ? results[0].address_components : [];
         const get = (type) => components.find((item) => item.types.includes(type))?.long_name || "";
-        onChange({ latitude: point.lat, longitude: point.lng, distanceKm, line1: results?.[0]?.formatted_address || value.line1, city: get("locality") || get("administrative_area_level_2") || value.city, pincode: get("postal_code") || value.pincode });
+        const current = latest.current.value;
+        latest.current.onChange({
+          latitude: point.lat,
+          longitude: point.lng,
+          distanceKm,
+          line1: results?.[0]?.formatted_address || current.line1,
+          city: get("locality") || get("administrative_area_level_2") || current.city,
+          pincode: get("postal_code") || current.pincode,
+        });
       });
     };
     map.addListener("click", (event) => { markerRef.current.setPosition(event.latLng); select(event.latLng); });
